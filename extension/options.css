@@ -1,0 +1,28 @@
+:root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #1d2733; background: #f4f6f8; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px 18px; }
+main { width: min(760px, 100%); margin: 0 auto; }
+header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.mark { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 13px; color: white; background: #6f55d9; font-weight: 700; font-size: 22px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: 24px; }
+header p, .hint { margin-top: 6px; color: #657180; font-size: 13px; }
+section { margin-top: 16px; padding: 22px; border: 1px solid #dbe0e6; border-radius: 14px; background: white; box-shadow: 0 5px 20px rgba(23, 36, 50, .05); }
+h2 { margin-bottom: 18px; font-size: 16px; }
+label { display: block; margin: 14px 0 6px; font-size: 13px; font-weight: 600; }
+input, select, button { min-height: 40px; border-radius: 8px; font: inherit; }
+input, select { width: 100%; border: 1px solid #cbd2da; padding: 8px 11px; background: white; }
+input:focus, select:focus { outline: 2px solid #dcd4ff; border-color: #735edb; }
+.path-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+button { border: 1px solid #cbd2da; padding: 0 16px; cursor: pointer; background: white; }
+button:hover { border-color: #735edb; }
+.primary { color: white; border-color: #654ecb; background: #6f55d9; }
+.secondary { background: #eef0f4; }
+.section-title { display: flex; align-items: center; justify-content: space-between; }
+.section-title h2 { margin-bottom: 0; }
+.status { padding: 4px 9px; border-radius: 99px; color: #8a5c14; background: #fff2cf; font-size: 12px; }
+.status.ready { color: #176b35; background: #dff5e6; }
+footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+#message { margin-right: auto; color: #52606d; font-size: 13px; }
+#message.error { color: #b42318; }
+.preview { margin: 14px 0 0; padding: 14px; border: 1px solid #dbe0e6; border-radius: 8px; color: #243140; background: #f7f8fa; font: 13px/1.7 Consolas, "Microsoft YaHei", monospace; white-space: pre-wrap; }

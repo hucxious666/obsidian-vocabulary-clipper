@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Obsidian 词汇采集器设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark">W</div>
+      <div><h1>Obsidian 词汇采集器</h1><p>从 Chrome PDF 右键添加到指定 Chapter 或 NEWS。</p></div>
+    </header>
+
+    <section>
+      <h2>Markdown 文件</h2>
+      <label for="chapter-file">Chapter 文件</label>
+      <div class="path-row"><input id="chapter-file" type="text"><button data-browse="chapter">浏览…</button></div>
+      <label for="news-file">NEWS 文件</label>
+      <div class="path-row"><input id="news-file" type="text"><button data-browse="news">浏览…</button></div>
+      <label for="chapter">当前 Chapter</label>
+      <select id="chapter"></select>
+    </section>
+
+    <section>
+      <div class="section-title"><h2>百度翻译</h2><span id="credential-status" class="status">未配置</span></div>
+      <p class="hint">凭据会由 Windows DPAPI 加密保存在本机。已配置时留空即可保持不变。</p>
+      <label for="app-id">APP ID</label>
+      <input id="app-id" type="password" autocomplete="off" placeholder="输入新的 APP ID">
+      <label for="secret-key">密钥</label>
+      <input id="secret-key" type="password" autocomplete="off" placeholder="输入新的密钥">
+    </section>
+
+    <section>
+      <div class="section-title"><h2>有道词典预览</h2><span id="youdao-credential-status" class="status">未配置</span></div>
+      <p class="hint">可选功能。凭据同样使用 Windows DPAPI 加密；查询结果只在此页临时显示，不写入笔记、不缓存。</p>
+      <label for="youdao-app-key">App Key</label>
+      <input id="youdao-app-key" type="password" autocomplete="off" placeholder="输入新的 App Key">
+      <label for="youdao-secret-key">App Secret</label>
+      <input id="youdao-secret-key" type="password" autocomplete="off" placeholder="输入新的 App Secret">
+      <label for="youdao-test-word">测试单词</label>
+      <div class="path-row">
+        <input id="youdao-test-word" type="text" value="ignominious" autocomplete="off">
+        <button id="test-youdao" class="secondary">测试有道词典</button>
+      </div>
+      <pre id="youdao-preview" class="preview" hidden></pre>
+    </section>
+
+    <footer>
+      <span id="message" role="status"></span>
+      <button id="test" class="secondary">测试连接</button>
+      <button id="save" class="primary">保存设置</button>
+    </footer>
+  </main>
+  <script src="lib.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

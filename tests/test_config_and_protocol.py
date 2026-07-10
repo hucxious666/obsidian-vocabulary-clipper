@@ -1,0 +1,94 @@
+import io
+import json
+import struct
+import tempfile
+import unittest
+from pathlib import Path
+
+from clipper.config import AppConfig, ConfigStore, SettingsValidationError
+from clipper.protocol import read_message, write_message
+
+
+class MemoryProtector:
+    def protect(self, value):
+        return "protected:" + value[::-1]
+
+    def unprotect(self, value):
+        return value.removeprefix("protected:")[::-1]
+
+
+class ConfigStoreTests(unittest.TestCase):
+    def test_credentials_are_protected_and_never_returned_in_public_settings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            chapter = Path(temp_dir) / "chapter.md"
+            news = Path(temp_dir) / "news.md"
+            chapter.write_text("**chapter 22**\n", encoding="utf-8")
+            news.write_text("", encoding="utf-8")
+            store = ConfigStore(Path(temp_dir) / "config.json", MemoryProtector())
+            store.save(
+                AppConfig(
+                    str(chapter), str(news), 22, "appid", "secret", "youdao-app", "youdao-secret"
+                )
+            )
+
+            raw = (Path(temp_dir) / "config.json").read_text(encoding="utf-8")
+            public = store.public_settings()
+
+            self.assertNotIn("secret", raw)
+            self.assertNotIn("appid", json.dumps(public))
+            self.assertNotIn("youdao-app", raw)
+            self.assertNotIn("youdao-secret", raw)
+            self.assertTrue(public["credentialsConfigured"])
+            self.assertTrue(public["youdaoCredentialsConfigured"])
+
+    def test_loads_legacy_config_without_youdao_credentials(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            chapter = Path(temp_dir) / "chapter.md"
+            news = Path(temp_dir) / "news.md"
+            chapter.write_text("**chapter 22**\n", encoding="utf-8")
+            news.write_text("", encoding="utf-8")
+            path = Path(temp_dir) / "config.json"
+            protector = MemoryProtector()
+            path.write_text(
+                json.dumps(
+                    {
+                        "chapter_file": str(chapter),
+                        "news_file": str(news),
+                        "selected_chapter": 22,
+                        "credentials": {
+                            "id": protector.protect("appid"),
+                            "key": protector.protect("secret"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = ConfigStore(path, protector).load()
+            self.assertEqual("", config.youdao_app_key)
+            self.assertEqual("", config.youdao_secret_key)
+
+    def test_rejects_non_markdown_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            text_file = Path(temp_dir) / "words.txt"
+            text_file.write_text("", encoding="utf-8")
+            store = ConfigStore(Path(temp_dir) / "config.json", MemoryProtector())
+            with self.assertRaises(SettingsValidationError):
+                store.validate_path(text_file)
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_round_trips_utf8_native_message(self):
+        stream = io.BytesIO()
+        write_message(stream, {"message": "中文"})
+        stream.seek(0)
+        self.assertEqual({"message": "中文"}, read_message(stream))
+
+    def test_rejects_oversized_message_before_reading_payload(self):
+        stream = io.BytesIO(struct.pack("<I", 1_048_577))
+        with self.assertRaises(ValueError):
+            read_message(stream)
+
+
+if __name__ == "__main__":
+    unittest.main()
