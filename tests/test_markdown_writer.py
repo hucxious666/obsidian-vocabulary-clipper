@@ -3,12 +3,62 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from clipper import markdown_writer
 from clipper.markdown_writer import (
     DuplicateEntry,
     insert_chapter_entry,
     insert_news_entry,
     write_entry_atomic,
 )
+
+
+class SectionModelTests(unittest.TestCase):
+    def test_discovers_h2_and_legacy_chapters_outside_code_fences(self):
+        source = (
+            "## 阅读笔记\n\n```md\n## 不应识别\n```\n\n"
+            "**chapter 22**\n\n### chapter 23\n"
+        )
+
+        find_sections = getattr(markdown_writer, "find_sections", lambda _source: [])
+
+        self.assertEqual(["阅读笔记", "Chapter 22", "Chapter 23"], find_sections(source))
+
+    def test_inserts_entry_inside_named_section_before_next_h2(self):
+        source = "## 足球\n\n1. goal /g/: <span class=\"meaning\">进球</span>\n\n## 新闻\n"
+        insert_section_entry = getattr(
+            markdown_writer,
+            "insert_section_entry",
+            lambda text, *_args: (text, 0),
+        )
+
+        updated, number = insert_section_entry(source, "足球", "player", "pleɪə", "球员")
+
+        self.assertEqual(2, number)
+        football, news = updated.split("## 新闻", 1)
+        self.assertIn('2. player /pleɪə/: <span class="meaning">球员</span>', football)
+        self.assertNotIn("player", news)
+
+    def test_creates_normalized_h2_at_note_end(self):
+        create_section = getattr(
+            markdown_writer,
+            "create_section",
+            lambda text, _name: (text, ""),
+        )
+
+        updated, name = create_section("# 词汇\n", "  Match   Review  ")
+
+        self.assertEqual("Match Review", name)
+        self.assertTrue(updated.endswith("\n## Match Review\n"))
+
+    def test_rejects_duplicate_section_name_case_insensitively(self):
+        create_section = getattr(
+            markdown_writer,
+            "create_section",
+            lambda text, _name: (text + "\n## football\n", "football"),
+        )
+
+        with self.assertRaises(ValueError):
+            create_section("## Football\n", " football ")
 
 
 class ChapterInsertionTests(unittest.TestCase):

@@ -9,8 +9,15 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from .selection import canonical_word
+from .sections import (
+    find_chapters,
+    find_sections,
+    normalize_section_name,
+    section_headings,
+)
 
 
 class DuplicateEntry(ValueError):
@@ -18,6 +25,10 @@ class DuplicateEntry(ValueError):
 
 
 class ChapterNotFound(ValueError):
+    pass
+
+
+class SectionNotFound(ValueError):
     pass
 
 
@@ -31,16 +42,8 @@ class WriteResult:
     target: str
 
 
-_CHAPTER_HEADING = re.compile(
-    r"^[ \t]*(?:#{1,6}[ \t]*|\*{1,2}[ \t]*)chapter[ \t]+(\d+)[ \t]*\*{0,2}[ \t]*(?=\r?$)",
-    re.IGNORECASE | re.MULTILINE,
-)
 _ENTRY = re.compile(r"^[ \t]*(?:-[ \t]*)?(\d+)\.[ \t]+(.+?)[ \t]+/[^/\r\n]+/", re.MULTILINE)
 _THEMATIC_BREAK = re.compile(r"^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$", re.MULTILINE)
-
-
-def find_chapters(source: str) -> list[int]:
-    return [int(match.group(1)) for match in _CHAPTER_HEADING.finditer(source)]
 
 
 def _newline_for(source: str) -> str:
@@ -85,24 +88,43 @@ def _append_to_chapter_region(region: str, entry: str, newline: str) -> str:
     return result
 
 
-def insert_chapter_entry(
-    source: str, chapter: int, word: str, phonetic: str, meaning: str
+def insert_section_entry(
+    source: str, section: str, word: str, phonetic: str, meaning: str
 ) -> tuple[str, int]:
-    headings = list(_CHAPTER_HEADING.finditer(source))
-    for index, heading in enumerate(headings):
-        if int(heading.group(1)) != int(chapter):
-            continue
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(source)
-        region = source[heading.end():end]
+    name = normalize_section_name(section)
+    headings = section_headings(source)
+    matches = [heading for heading in headings if heading.name.casefold() == name.casefold()]
+    if len(matches) > 1:
+        raise ValueError(f"章节名称重复：{name}")
+    for heading in matches:
+        index = headings.index(heading)
+        end = headings[index + 1].start if index + 1 < len(headings) else len(source)
+        region = source[heading.end:end]
         if canonical_word(word) in _entry_words(region):
-            raise DuplicateEntry(f"{word} 已存在于 chapter {chapter}")
+            raise DuplicateEntry(f"{word} 已存在于 {name}")
         numbers = [int(match.group(1)) for match in _ENTRY.finditer(region)]
         number = max(numbers, default=0) + 1
         updated_region = _append_to_chapter_region(
             region, _format_entry(number, word, phonetic, meaning), _newline_for(source)
         )
-        return source[:heading.end()] + updated_region + source[end:], number
-    raise ChapterNotFound(f"未找到 chapter {chapter}")
+        return source[:heading.end] + updated_region + source[end:], number
+    raise SectionNotFound(f"未找到章节：{name}")
+
+
+def insert_chapter_entry(
+    source: str, chapter: int, word: str, phonetic: str, meaning: str
+) -> tuple[str, int]:
+    return insert_section_entry(source, f"Chapter {int(chapter)}", word, phonetic, meaning)
+
+
+def create_section(source: str, section: str) -> tuple[str, str]:
+    name = normalize_section_name(section)
+    if any(existing.casefold() == name.casefold() for existing in find_sections(source)):
+        raise ValueError(f"章节已存在：{name}")
+    newline = _newline_for(source)
+    prefix = source.rstrip(" \t\r\n")
+    separator = newline * 2 if prefix else ""
+    return f"{prefix}{separator}## {name}{newline}", name
 
 
 def _tail_number(source: str) -> int:
@@ -124,7 +146,7 @@ def _tail_number(source: str) -> int:
 
 def insert_news_entry(source: str, word: str, phonetic: str, meaning: str) -> tuple[str, int]:
     if canonical_word(word) in _entry_words(source):
-        raise DuplicateEntry(f"{word} 已存在于 NEWS")
+        raise DuplicateEntry(f"{word} 已存在于笔记")
     number = _tail_number(source) + 1
     newline = _newline_for(source)
     entry = _format_entry(number, word, phonetic, meaning)
@@ -142,20 +164,20 @@ def _read_text(path: Path) -> tuple[bytes, str, bool]:
     return data, data.decode("utf-8-sig" if has_bom else "utf-8"), has_bom
 
 
-def ensure_not_duplicate(path: Path, target: str, chapter: int | None, word: str) -> None:
+def ensure_not_duplicate(path: Path, target: str, section: str | int | None, word: str) -> None:
     _, source, _ = _read_text(Path(path))
     region = source
-    if target == "chapter":
-        headings = list(_CHAPTER_HEADING.finditer(source))
-        for index, heading in enumerate(headings):
-            if int(heading.group(1)) == int(chapter or 0):
-                end = headings[index + 1].start() if index + 1 < len(headings) else len(source)
-                region = source[heading.end():end]
-                break
-        else:
-            raise ChapterNotFound(f"未找到 chapter {chapter}")
+    if target in {"chapter", "section"}:
+        name = f"Chapter {int(section or 0)}" if target == "chapter" else str(section or "")
+        headings = section_headings(source)
+        matches = [heading for heading in headings if heading.name.casefold() == name.casefold()]
+        if len(matches) != 1:
+            raise SectionNotFound(f"未找到唯一章节：{name}")
+        index = headings.index(matches[0])
+        end = headings[index + 1].start if index + 1 < len(headings) else len(source)
+        region = source[matches[0].end:end]
     if canonical_word(word) in _entry_words(region):
-        label = f"chapter {chapter}" if target == "chapter" else "NEWS"
+        label = str(section) if target in {"chapter", "section"} else "笔记末尾"
         raise DuplicateEntry(f"{word} 已存在于 {label}")
 
 
@@ -178,26 +200,23 @@ def _write_temporary(path: Path, encoded: bytes) -> str:
         return handle.name
 
 
-def write_entry_atomic(
-    path: Path,
-    target: str,
-    chapter: int | None,
-    word: str,
-    phonetic: str,
-    meaning: str,
-    backup_root: Path,
+def restore_bytes_atomic(path: Path, data: bytes) -> None:
+    temp_name = _write_temporary(path, data)
+    try:
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def _transform_atomic(
+    path: Path, backup_root: Path, transform: Callable[[str], tuple[str, WriteResult]]
 ) -> WriteResult:
     path = path.resolve()
     for attempt in range(2):
         before = path.stat()
         _, source, has_bom = _read_text(path)
-        if target == "chapter":
-            updated, number = insert_chapter_entry(source, int(chapter or 0), word, phonetic, meaning)
-        elif target == "news":
-            updated, number = insert_news_entry(source, word, phonetic, meaning)
-        else:
-            raise ValueError("未知写入目标")
-
+        updated, result = transform(source)
         current = path.stat()
         if (current.st_mtime_ns, current.st_size) != (before.st_mtime_ns, before.st_size):
             if attempt == 0:
@@ -224,5 +243,45 @@ def write_entry_atomic(
             if attempt == 0:
                 continue
             raise ConcurrentWriteError("文件在写入期间被修改")
-        return WriteResult(number=number, target=target)
+        return result
     raise ConcurrentWriteError("文件在写入期间被修改")
+
+
+def write_entry_atomic(
+    path: Path,
+    target: str,
+    section: str | int | None,
+    word: str,
+    phonetic: str,
+    meaning: str,
+    backup_root: Path,
+) -> WriteResult:
+    def transform(source: str) -> tuple[str, WriteResult]:
+        if target in {"chapter", "section"}:
+            name = f"Chapter {int(section or 0)}" if target == "chapter" else str(section or "")
+            updated, number = insert_section_entry(source, name, word, phonetic, meaning)
+        elif target in {"news", "append"}:
+            updated, number = insert_news_entry(source, word, phonetic, meaning)
+        else:
+            raise ValueError("未知写入目标")
+        return updated, WriteResult(number=number, target=target)
+
+    return _transform_atomic(path, backup_root, transform)
+
+
+def create_section_atomic(
+    path: Path,
+    section: str,
+    backup_root: Path,
+    entry: tuple[str, str, str] | None = None,
+) -> WriteResult:
+    name = normalize_section_name(section)
+
+    def transform(source: str) -> tuple[str, WriteResult]:
+        updated, _ = create_section(source, name)
+        number = 0
+        if entry:
+            updated, number = insert_section_entry(updated, name, *entry)
+        return updated, WriteResult(number=number, target="section")
+
+    return _transform_atomic(path, backup_root, transform)

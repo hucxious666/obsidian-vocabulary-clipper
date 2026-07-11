@@ -5,14 +5,46 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
+  function normalizeSettings(settings) {
+    const value = settings || {};
+    const selectedSection = value.selectedSection
+      || `Chapter ${Number(value.selectedChapter) || 22}`;
+    const sections = Array.isArray(value.sections)
+      ? value.sections.map(String)
+      : (value.chapters || []).map((chapter) => `Chapter ${chapter}`);
+    return {
+      sectionFile: value.sectionFile || value.chapterFile || "",
+      appendFile: value.appendFile || value.newsFile || "",
+      selectedSection,
+      sections,
+    };
+  }
+
   function menuTitles(settings) {
-    const chapter = Number(settings && settings.selectedChapter) || 22;
-    return { chapter: `加入 Chapter ${chapter}`, news: "加入 NEWS" };
+    const value = normalizeSettings(settings);
+    return { section: `加入 ${value.selectedSection}`, append: "添加到笔记末尾" };
   }
 
   function safeMessage(response) {
     const value = response && typeof response.message === "string" ? response.message : "操作失败";
     return value.slice(0, 200);
+  }
+
+  function eventOccursWithin(event, host) {
+    const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+    return path.includes(host) || host.contains(event && event.target);
+  }
+
+  function shouldDismissPopover(event, host, activeElement) {
+    if (event && event.type === "scroll" && activeElement && activeElement.tagName === "SELECT") {
+      return false;
+    }
+    return !eventOccursWithin(event, host);
+  }
+
+  function shouldHandleSelectionEvent(event, host, popoverOpen) {
+    if (event && event.type === "selectionchange") return !popoverOpen;
+    return !eventOccursWithin(event, host);
   }
 
   function notificationFor(response) {
@@ -180,10 +212,13 @@
     hasPdfBypass,
     isSafePdfSource,
     menuTitles,
+    normalizeSettings,
     normalizeLookupText,
     notificationFor,
     positionPopover,
     safeMessage,
+    shouldDismissPopover,
+    shouldHandleSelectionEvent,
     shouldRedirectPdf,
     wordAtOffset,
   };

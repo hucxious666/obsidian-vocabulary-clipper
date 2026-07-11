@@ -9,9 +9,20 @@ function eventChannel() {
   };
 }
 
-assert.deepStrictEqual(ui.menuTitles({ selectedChapter: 22 }), {
-  chapter: "加入 Chapter 22",
-  news: "加入 NEWS",
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }), {
+  section: "加入 Match Review",
+  append: "添加到笔记末尾",
+});
+assert.deepStrictEqual(ui.normalizeSettings({
+  chapterFile: "chapter.md",
+  newsFile: "news.md",
+  selectedChapter: 22,
+  chapters: [21, 22],
+}), {
+  sectionFile: "chapter.md",
+  appendFile: "news.md",
+  selectedSection: "Chapter 22",
+  sections: ["Chapter 21", "Chapter 22"],
 });
 
 assert.strictEqual(ui.notificationFor({ ok: true, status: "added" }), null);
@@ -26,6 +37,52 @@ assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "lookup_failed", 
 
 assert.strictEqual(ui.safeMessage({ message: "ok" }), "ok");
 assert.strictEqual(ui.safeMessage({ message: "a".repeat(500) }).length, 200);
+
+assert.strictEqual(typeof ui.shouldDismissPopover, "function");
+const popoverHost = { contains: (target) => target === popoverHost };
+const outsideTarget = {};
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "scroll", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [{}, popoverHost, outsideTarget] },
+  popoverHost,
+  null,
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  null,
+), true);
+
+assert.strictEqual(typeof ui.shouldHandleSelectionEvent, "function");
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [{}, popoverHost] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), true);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  false,
+), true);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), true);
 
 assert.strictEqual(
   ui.formatTranslationPreview({

@@ -51,18 +51,26 @@ function queueSelection(point, delay = 0) {
 
 function bindLookup() {
   window.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
   }, true);
-  document.addEventListener("selectionchange", () => {
+  document.addEventListener("selectionchange", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
     queueSelection(lastSelectionPoint, 200);
   }, true);
   window.addEventListener("mouseup", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
     queueSelection(lastSelectionPoint);
   }, true);
   document.addEventListener("dblclick", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
     lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
     queueSelection(lastSelectionPoint);
   }, true);

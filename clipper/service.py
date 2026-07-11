@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -8,8 +9,11 @@ from .dictionary import DictionaryLookup, LookupNotFound
 from .markdown_writer import (
     ConcurrentWriteError,
     DuplicateEntry,
+    create_section_atomic,
     ensure_not_duplicate,
-    find_chapters,
+    find_sections,
+    normalize_section_name,
+    restore_bytes_atomic,
     write_entry_atomic,
 )
 from .meaning import normalize_ecdict_translation, parse_definition_groups
@@ -28,6 +32,9 @@ class ClipperService:
         "lookup_definition",
         "translate_selection",
         "add_entry",
+        "select_section",
+        "create_section",
+        "create_section_and_add_entry",
     }
 
     def __init__(
@@ -67,6 +74,10 @@ class ClipperService:
                 return self._lookup_definition(message)
             if action == "translate_selection":
                 return self._translate_selection(message)
+            if action == "select_section":
+                return self._select_section(message)
+            if action in {"create_section", "create_section_and_add_entry"}:
+                return self._create_section(message, action == "create_section_and_add_entry")
             return self._add_entry(message)
         except (SettingsValidationError, InvalidSelection, ValueError) as error:
             return self._error("invalid", str(error))
@@ -76,7 +87,9 @@ class ClipperService:
             return self._error("write_failed", "本地服务发生未预期错误")
 
     def _browse_file(self, message: dict) -> dict:
-        if message.get("target") not in {"chapter", "news"} or self.file_picker is None:
+        targets = {"chapter": "section", "news": "append", "section": "section", "append": "append"}
+        target = targets.get(message.get("target"))
+        if target is None or self.file_picker is None:
             return self._error("invalid", "文件选择请求无效")
         initial = str(message.get("initialPath") or "")
         selected = self.file_picker(initial)
@@ -84,8 +97,13 @@ class ClipperService:
             return {"ok": False, "status": "cancelled", "message": "已取消"}
         path = self.config_store.validate_path(selected)
         result = {"ok": True, "status": "ok", "path": str(path)}
-        if message["target"] == "chapter":
-            result["chapters"] = self._read_chapters(path)
+        if target == "section":
+            result["sections"] = self._read_sections(path)
+            result["chapters"] = [
+                int(name.removeprefix("Chapter "))
+                for name in result["sections"]
+                if name.startswith("Chapter ") and name.removeprefix("Chapter ").isdigit()
+            ]
         return result
 
     def _save_settings(self, message: dict) -> dict:
@@ -104,9 +122,12 @@ class ClipperService:
             existing.youdao_secret_key if existing else ""
         )
         config = AppConfig(
-            chapter_file=str(message.get("chapterFile") or ""),
-            news_file=str(message.get("newsFile") or ""),
-            selected_chapter=int(message.get("selectedChapter") or 0),
+            section_file=str(message.get("sectionFile") or message.get("chapterFile") or ""),
+            append_file=str(message.get("appendFile") or message.get("newsFile") or ""),
+            selected_section=str(
+                message.get("selectedSection")
+                or f"Chapter {int(message.get('selectedChapter') or 0)}"
+            ),
             app_id=app_id,
             secret_key=secret_key,
             youdao_app_key=youdao_app_key,
@@ -193,23 +214,25 @@ class ClipperService:
         }
 
     def _add_entry(self, message: dict) -> dict:
-        target = message.get("target")
-        if target not in {"chapter", "news"}:
+        target = {"chapter": "section", "news": "append"}.get(
+            message.get("target"), message.get("target")
+        )
+        if target not in {"section", "append"}:
             return self._error("invalid", "写入目标无效")
         word = normalize_selection(str(message.get("text") or ""))
         config = self.config_store.load()
         try:
-            path = Path(config.chapter_file if target == "chapter" else config.news_file)
-            chapter = config.selected_chapter if target == "chapter" else None
-            ensure_not_duplicate(path, target, chapter, word)
+            path = Path(config.section_file if target == "section" else config.append_file)
+            section = str(message.get("sectionName") or config.selected_section) if target == "section" else None
+            ensure_not_duplicate(path, target, section, word)
             dictionary_entry = self.dictionary_factory(self.dictionary_path).lookup(word)
             meaning = normalize_ecdict_translation(dictionary_entry.translation)
             if not meaning:
                 meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
             result = write_entry_atomic(
-                path, target, chapter, word, dictionary_entry.phonetic, meaning, self.backup_root
+                path, target, section, word, dictionary_entry.phonetic, meaning, self.backup_root
             )
-            label = f"Chapter {chapter}" if target == "chapter" else "NEWS"
+            label = section if target == "section" else "笔记末尾"
             return {
                 "ok": True,
                 "status": "added",
@@ -227,10 +250,46 @@ class ClipperService:
         except OSError:
             return self._error("write_failed", "Markdown 文件写入失败")
 
-    def _read_chapters(self, path: Path) -> list[int]:
+    def _select_section(self, message: dict) -> dict:
+        config = self.config_store.load()
+        name = normalize_section_name(str(message.get("sectionName") or ""))
+        self.config_store.save(replace(config, selected_section=name))
+        return {"ok": True, "status": "selected", **self.config_store.public_settings()}
+
+    def _create_section(self, message: dict, add_entry: bool) -> dict:
+        config = self.config_store.load()
+        name = normalize_section_name(str(message.get("sectionName") or ""))
+        path = Path(config.section_file)
+        original = path.read_bytes()
+        entry = None
+        word = ""
+        if add_entry:
+            word = normalize_selection(str(message.get("text") or ""))
+            dictionary_entry = self.dictionary_factory(self.dictionary_path).lookup(word)
+            meaning = normalize_ecdict_translation(dictionary_entry.translation)
+            if not meaning:
+                meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
+            entry = (word, dictionary_entry.phonetic, meaning)
+        result = create_section_atomic(path, name, self.backup_root, entry)
+        try:
+            self.config_store.save(replace(config, selected_section=name))
+        except Exception:
+            restore_bytes_atomic(path, original)
+            raise
+        return {
+            "ok": True,
+            "status": "added" if add_entry else "created",
+            "word": word or None,
+            "number": result.number,
+            "targetLabel": name,
+            "message": f"已创建并加入 {name}" if add_entry else f"已创建 {name}",
+            **self.config_store.public_settings(),
+        }
+
+    def _read_sections(self, path: Path) -> list[str]:
         data = path.read_bytes()
         text = data.decode("utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8")
-        return find_chapters(text)
+        return find_sections(text)
 
     @staticmethod
     def _error(status: str, message: str) -> dict:

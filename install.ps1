@@ -106,7 +106,7 @@ Write-Host 'Installation completed.' -ForegroundColor Green
 Write-Host "Extension directory: $extensionPath"
 Write-Host "Extension ID: $EXTENSION_ID"
 Write-Host 'Open chrome://extensions, enable Developer mode, click Load unpacked, and select the extension directory above.'
-Write-Host 'Then open extension options, configure Baidu credentials, and optionally configure Youdao Dictionary credentials.'
+Write-Host 'Then open extension options, configure Baidu credentials, and optionally configure Youdao translation credentials.'
 
 if (-not $NoOpenChrome) {
     $chromeCandidates = @(

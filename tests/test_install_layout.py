@@ -33,7 +33,7 @@ class InstallLayoutTests(unittest.TestCase):
     def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.3.0", manifest["version"])
+        self.assertEqual("1.4.0", manifest["version"])
         self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
         scripts = manifest["content_scripts"][0]
         self.assertEqual(
@@ -52,6 +52,9 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertIn('id="youdao-preview"', options)
         self.assertIn('id="double-click-lookup"', options)
         self.assertIn('id="auto-open-pdf"', options)
+        self.assertIn('id="section-select"', options)
+        self.assertIn('id="new-section"', options)
+        self.assertIn('id="create-section"', options)
         self.assertIn("有道文本翻译", options)
         self.assertIn('id="youdao-test-text"', options)
         options_script = (ROOT / "extension" / "options.js").read_text(encoding="utf-8")
@@ -71,6 +74,8 @@ class InstallLayoutTests(unittest.TestCase):
         content = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
         viewer = (ROOT / "extension" / "viewer.js").read_text(encoding="utf-8")
         self.assertIn('action: "translate_selection"', popover)
+        self.assertIn('action: "create_section_and_add_entry"', popover)
+        self.assertIn('action: "select_section"', popover)
         self.assertIn('action.mode === "translation"', content)
         self.assertIn('action.mode === "translation"', viewer)
         self.assertIn('document.addEventListener("selectionchange"', viewer)

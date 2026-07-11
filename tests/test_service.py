@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from clipper.config import AppConfig, ConfigStore
 from clipper.dictionary import DictionaryEntry, LookupNotFound
@@ -50,7 +51,7 @@ class ClipperServiceTests(unittest.TestCase):
         root = Path(self.temp_dir.name)
         self.chapter = root / "chapters.md"
         self.news = root / "news.md"
-        self.chapter.write_text("**chapter 22**\n\n", encoding="utf-8")
+        self.chapter.write_text("**chapter 22**\n\n## 阅读\n\n", encoding="utf-8")
         self.news.write_text("*continue*\n\n33. old /oʊld/: <span class=\"meaning\">旧</span>\n", encoding="utf-8")
         self.store = ConfigStore(root / "config.json", MemoryProtector())
         self.store.save(
@@ -86,6 +87,74 @@ class ClipperServiceTests(unittest.TestCase):
         self.assertIn("1. word /wɜːd/", self.chapter.read_text(encoding="utf-8"))
         self.assertIn("n.单词；词语", self.chapter.read_text(encoding="utf-8"))
         self.assertEqual([], FakeTranslator.calls)
+
+    def test_add_entry_can_target_named_section(self):
+        response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "section",
+                "sectionName": "阅读",
+                "text": "word",
+            }
+        )
+
+        self.assertEqual("added", response["status"])
+        self.assertEqual("阅读", response["targetLabel"])
+        reading = self.chapter.read_text(encoding="utf-8").split("## 阅读", 1)[1]
+        self.assertIn("1. word /wɜːd/", reading)
+
+    def test_select_section_updates_default(self):
+        response = self.service.handle(
+            {"action": "select_section", "sectionName": "阅读"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("阅读", self.store.load().selected_section)
+        self.assertEqual("阅读", response["selectedSection"])
+
+    def test_create_section_appends_h2_and_selects_it(self):
+        response = self.service.handle(
+            {"action": "create_section", "sectionName": "  Match   Review  "}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("Match Review", self.store.load().selected_section)
+        self.assertTrue(self.chapter.read_text(encoding="utf-8").endswith("## Match Review\n"))
+
+    def test_create_section_and_add_entry_is_one_operation(self):
+        response = self.service.handle(
+            {
+                "action": "create_section_and_add_entry",
+                "sectionName": "比赛",
+                "text": "word",
+            }
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("比赛", response["targetLabel"])
+        self.assertEqual("比赛", self.store.load().selected_section)
+        created = self.chapter.read_text(encoding="utf-8").split("## 比赛", 1)[1]
+        self.assertIn("1. word /wɜːd/", created)
+
+    def test_create_section_rolls_back_note_when_config_save_fails(self):
+        before = self.chapter.read_bytes()
+
+        with patch.object(self.store, "save", side_effect=OSError("disk full")):
+            response = self.service.handle(
+                {"action": "create_section", "sectionName": "不应残留"}
+            )
+
+        self.assertEqual("write_failed", response["status"])
+        self.assertEqual(before, self.chapter.read_bytes())
+
+    def test_append_target_writes_to_append_note(self):
+        response = self.service.handle(
+            {"action": "add_entry", "target": "append", "text": "word"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("笔记末尾", response["targetLabel"])
+        self.assertIn("34. word /wɜːd/", self.news.read_text(encoding="utf-8"))
 
     def test_baidu_is_only_used_when_ecdict_translation_is_empty(self):
         response = self.service.handle(

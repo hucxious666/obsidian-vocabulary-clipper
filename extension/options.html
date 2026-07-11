@@ -10,17 +10,22 @@
   <main>
     <header>
       <div class="mark">W</div>
-      <div><h1>Obsidian 词汇采集器</h1><p>选区查词与翻译，并将单词添加到 Chapter 或 NEWS。</p></div>
+      <div><h1>Obsidian 词汇采集器</h1><p>选区查词与翻译，并将单词加入指定章节或笔记末尾。</p></div>
     </header>
 
     <section>
       <h2>Markdown 文件</h2>
-      <label for="chapter-file">Chapter 文件</label>
-      <div class="path-row"><input id="chapter-file" type="text"><button data-browse="chapter">浏览…</button></div>
-      <label for="news-file">NEWS 文件</label>
-      <div class="path-row"><input id="news-file" type="text"><button data-browse="news">浏览…</button></div>
-      <label for="chapter">当前 Chapter</label>
-      <select id="chapter"></select>
+      <label for="section-file">章节笔记</label>
+      <div class="path-row"><input id="section-file" type="text"><button data-browse="section">浏览…</button></div>
+      <label for="append-file">末尾追加笔记</label>
+      <div class="path-row"><input id="append-file" type="text"><button data-browse="append">浏览…</button></div>
+      <label for="section-select">当前章节</label>
+      <select id="section-select"></select>
+      <label for="new-section">新增章节（二级标题）</label>
+      <div class="path-row">
+        <input id="new-section" type="text" maxlength="80" placeholder="例如：Match Review">
+        <button id="create-section" type="button">新增章节</button>
+      </div>
     </section>
 
     <section>

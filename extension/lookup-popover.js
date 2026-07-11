@@ -32,13 +32,18 @@
 
     bindDismissal() {
       document.addEventListener("mousedown", (event) => {
-        if (this.host.style.display !== "none" && !this.host.contains(event.target)) this.close();
+        if (
+          this.host.style.display !== "none"
+          && ClipperUi.shouldDismissPopover(event, this.host, this.shadow.activeElement)
+        ) this.close();
       }, true);
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") this.close();
       }, true);
       window.addEventListener("scroll", (event) => {
-        if (!this.host.contains(event.target)) this.close();
+        if (ClipperUi.shouldDismissPopover(event, this.host, this.shadow.activeElement)) {
+          this.close();
+        }
       }, true);
       window.addEventListener("resize", () => this.close());
     }
@@ -105,18 +110,86 @@
       header.append(heading, this.closeButton());
       const groups = this.element("div", "lookup-groups");
       for (const group of definition.groups || []) groups.append(this.definitionGroup(group));
-      const chapter = await chrome.storage.local.get({ selectedChapter: 22 });
+      const cached = await chrome.storage.local.get({
+        selectedSection: "Chapter 22",
+        sections: ["Chapter 22"],
+      });
       if (request !== this.sequence) return;
       const status = this.element("div", "lookup-status");
       status.setAttribute("role", "status");
-      const actions = this.element("footer", "lookup-actions");
-      actions.append(
-        this.actionButton(`加入 Chapter ${chapter.selectedChapter}`, "chapter", definition.word, status),
-        this.actionButton("加入 NEWS", "news", definition.word, status),
+      const sectionPanel = this.sectionPanel(
+        definition.word,
+        status,
+        ClipperUi.normalizeSettings(cached),
       );
       const source = this.element("div", "lookup-source", definition.source === "baidu" ? "来源：百度翻译" : "来源：ECDICT");
-      this.card.append(header, groups, source, status, actions);
+      this.card.append(header, groups, source, status, sectionPanel);
       this.open();
+    }
+
+    sectionPanel(word, status, settings) {
+      const panel = this.element("div", "lookup-section-panel");
+      const select = document.createElement("select");
+      select.className = "lookup-section-select";
+      select.setAttribute("aria-label", "选择章节");
+      this.populateSectionSelect(select, settings.sections, settings.selectedSection);
+      select.addEventListener("change", async () => {
+        status.textContent = "正在切换章节…";
+        try {
+          const response = await this.sendNative({
+            action: "select_section",
+            sectionName: select.value,
+          });
+          status.textContent = response && response.message
+            ? response.message
+            : (response && response.ok ? `已选择 ${select.value}` : "切换章节失败");
+          if (response && response.ok) this.applySectionSettings(response, select);
+        } catch (_error) {
+          status.textContent = "无法连接本地服务";
+        }
+      });
+      const actions = this.element("footer", "lookup-actions");
+      actions.append(
+        this.actionButton("加入所选章节", () => ({
+          action: "add_entry", target: "section", sectionName: select.value, text: word,
+        }), status),
+        this.actionButton("添加到笔记末尾", () => ({
+          action: "add_entry", target: "append", text: word,
+        }), status),
+      );
+      const input = document.createElement("input");
+      input.className = "lookup-section-input";
+      input.maxLength = 80;
+      input.placeholder = "新章节名称";
+      const create = this.actionButton("新建并加入", () => ({
+        action: "create_section_and_add_entry",
+        sectionName: input.value,
+        text: word,
+      }), status, (response) => {
+        input.value = "";
+        this.applySectionSettings(response, select);
+      });
+      const createRow = this.element("div", "lookup-create-row");
+      createRow.append(input, create);
+      panel.append(select, actions, createRow);
+      return panel;
+    }
+
+    populateSectionSelect(select, sections, selected) {
+      select.replaceChildren();
+      for (const name of sections || []) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        option.selected = name.toLocaleLowerCase() === String(selected).toLocaleLowerCase();
+        select.append(option);
+      }
+    }
+
+    applySectionSettings(response, select) {
+      const settings = ClipperUi.normalizeSettings(response);
+      this.populateSectionSelect(select, settings.sections, settings.selectedSection);
+      void chrome.storage.local.set(settings);
     }
 
     renderTranslation(translation) {
@@ -148,7 +221,7 @@
       return section;
     }
 
-    actionButton(label, target, word, status) {
+    actionButton(label, payloadFactory, status, onSuccess) {
       const button = this.element("button", "lookup-action", label);
       button.type = "button";
       button.addEventListener("click", async () => {
@@ -156,8 +229,9 @@
         for (const item of buttons) item.disabled = true;
         status.textContent = "正在写入…";
         try {
-          const response = await this.sendNative({ action: "add_entry", target, text: word });
+          const response = await this.sendNative(payloadFactory());
           status.textContent = response && response.message ? response.message : "写入失败";
+          if (response && response.ok && onSuccess) onSuccess(response);
         } catch (_error) {
           status.textContent = "无法连接本地服务";
         } finally {
@@ -205,6 +279,10 @@
       this.host.style.setProperty("display", "none", "important");
       this.card.replaceChildren();
       this.anchor = null;
+    }
+
+    isOpen() {
+      return this.host.style.display !== "none";
     }
   }
 
