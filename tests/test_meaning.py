@@ -1,6 +1,6 @@
 import unittest
 
-from clipper.meaning import normalize_ecdict_translation
+from clipper.meaning import normalize_ecdict_translation, parse_definition_groups
 
 
 class MeaningNormalizationTests(unittest.TestCase):
@@ -19,6 +19,25 @@ class MeaningNormalizationTests(unittest.TestCase):
     def test_keeps_distinct_parts_of_speech(self):
         source = "n. 包围, 绕行\nvt. 绕行, 陷害, 包围, 智取"
         self.assertEqual("n.包围；绕行；vt.绕行；陷害；包围；智取", normalize_ecdict_translation(source))
+
+    def test_groups_detailed_meanings_by_part_of_speech_and_domain(self):
+        self.assertEqual(
+            [
+                {"partOfSpeech": "n.", "definitions": ["跑", "赛跑"]},
+                {"partOfSpeech": "vi.", "definitions": ["跑", "奔跑"]},
+                {"partOfSpeech": "[计]", "definitions": ["运行"]},
+                {"partOfSpeech": "其他", "definitions": ["run的过去式"]},
+            ],
+            parse_definition_groups(
+                "n. 跑, 赛跑\\nvi. 跑, 奔跑\\n[计] 运行\\nrun的过去式"
+            ),
+        )
+
+    def test_groups_aliases_and_removes_duplicates_within_a_group(self):
+        self.assertEqual(
+            [{"partOfSpeech": "adj.", "definitions": ["可耻的", "不名誉的"]}],
+            parse_definition_groups("a. 可耻的, 不名誉的, 可耻的"),
+        )
 
 
 if __name__ == "__main__":

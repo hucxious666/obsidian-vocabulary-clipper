@@ -26,3 +26,9 @@ footer { display: flex; align-items: center; justify-content: flex-end; gap: 10p
 #message { margin-right: auto; color: #52606d; font-size: 13px; }
 #message.error { color: #b42318; }
 .preview { margin: 14px 0 0; padding: 14px; border: 1px solid #dbe0e6; border-radius: 8px; color: #243140; background: #f7f8fa; font: 13px/1.7 Consolas, "Microsoft YaHei", monospace; white-space: pre-wrap; }
+.check-row { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0; cursor: pointer; }
+.check-row + .check-row { border-top: 1px solid #edf0f3; }
+.check-row input { width: 18px; min-height: 18px; margin: 2px 0 0; accent-color: #6f55d9; }
+.check-row span { display: grid; gap: 3px; }
+.check-row strong { font-size: 14px; }
+.check-row small { color: #657180; font-size: 12px; font-weight: 400; }

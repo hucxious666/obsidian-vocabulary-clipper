@@ -10,7 +10,7 @@
   <main>
     <header>
       <div class="mark">W</div>
-      <div><h1>Obsidian 词汇采集器</h1><p>从 Chrome PDF 右键添加到指定 Chapter 或 NEWS。</p></div>
+      <div><h1>Obsidian 词汇采集器</h1><p>双击查词，并添加到指定 Chapter 或 NEWS。</p></div>
     </header>
 
     <section>
@@ -21,6 +21,19 @@
       <div class="path-row"><input id="news-file" type="text"><button data-browse="news">浏览…</button></div>
       <label for="chapter">当前 Chapter</label>
       <select id="chapter"></select>
+    </section>
+
+    <section>
+      <h2>浏览体验</h2>
+      <label class="check-row" for="double-click-lookup">
+        <input id="double-click-lookup" type="checkbox">
+        <span><strong>网页双击查词</strong><small>在普通网页中双击英文单词时显示释义。</small></span>
+      </label>
+      <label class="check-row" for="auto-open-pdf">
+        <input id="auto-open-pdf" type="checkbox">
+        <span><strong>自动使用词汇 PDF 阅读器</strong><small>顶层 PDF 自动进入支持双击查词的阅读页。</small></span>
+      </label>
+      <p class="hint">本地 PDF 还需在 Chrome 扩展详情中开启“允许访问文件网址”。</p>
     </section>
 
     <section>

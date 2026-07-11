@@ -30,14 +30,35 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertEqual((128, 128), struct.unpack(">II", icon[16:24]))
         self.assertGreater(len(icon), 100)
 
-    def test_version_and_youdao_preview_controls_are_packaged(self):
+    def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.1.0", manifest["version"])
+        self.assertEqual("1.2.0", manifest["version"])
+        self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
+        scripts = manifest["content_scripts"][0]
+        self.assertEqual(
+            ["lib.js", "lookup-popover.js", "content.js"], scripts["js"]
+        )
+        resources = manifest["web_accessible_resources"][0]["resources"]
+        self.assertIn("lookup-popover.css", resources)
+        self.assertNotIn("viewer.html", resources)
+        content_script = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
+        background = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
+        self.assertIn('kind: "open_pdf_viewer"', content_script)
+        self.assertIn('message.kind === "open_pdf_viewer"', background)
         self.assertIn('id="youdao-app-key"', options)
         self.assertIn('id="youdao-secret-key"', options)
         self.assertIn('id="youdao-test-word"', options)
         self.assertIn('id="youdao-preview"', options)
+        self.assertIn('id="double-click-lookup"', options)
+        self.assertIn('id="auto-open-pdf"', options)
+
+    def test_lookup_popover_uses_visible_standard_host_element(self):
+        popover = (ROOT / "extension" / "lookup-popover.js").read_text(encoding="utf-8")
+        self.assertIn('document.createElement("div")', popover)
+        self.assertIn('this.host.id = "obsidian-vocabulary-lookup"', popover)
+        self.assertIn('"visibility", "visible", "important"', popover)
+        self.assertNotIn('document.createElement("obsidian-vocabulary-lookup")', popover)
 
     def test_install_and_uninstall_scripts_are_idempotent_by_design(self):
         install = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")
@@ -46,6 +67,25 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertRegex(install, re.compile(r"Copy-Item[^\n]+-Force"))
         self.assertIn("Remove-Item -ErrorAction SilentlyContinue", uninstall)
         self.assertRegex(install, re.compile(r"EXPECTED_ECDICT_SHA256\s*=\s*'[0-9a-f]{64}'"))
+
+    def test_pdf_reader_and_pinned_pdfjs_runtime_are_packaged(self):
+        vendor = ROOT / "extension" / "vendor" / "pdfjs"
+        for relative in (
+            "build/pdf.min.js",
+            "build/pdf.worker.min.js",
+            "web/pdf_viewer.js",
+            "web/pdf_viewer.css",
+            "cmaps/LICENSE",
+            "standard_fonts/LICENSE_FOXIT",
+            "LICENSE",
+            "VERSION",
+        ):
+            self.assertTrue((vendor / relative).is_file(), relative)
+        self.assertEqual("6.1.200", (vendor / "VERSION").read_text(encoding="utf-8").strip())
+        viewer = (ROOT / "extension" / "viewer.html").read_text(encoding="utf-8")
+        self.assertIn('<div id="viewer-container" role="main"', viewer)
+        for control in ("page-number", "zoom-out", "zoom-in", "fit-width", "download", "open-native"):
+            self.assertIn(f'id="{control}"', viewer)
 
 
 if __name__ == "__main__":

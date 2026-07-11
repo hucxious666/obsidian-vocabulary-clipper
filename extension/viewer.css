@@ -1,0 +1,36 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  --toolbar-height: 54px;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { color: #253042; background: #dfe3e8; }
+.toolbar { position: fixed; inset: 0 0 auto; z-index: 20; display: flex; align-items: center; gap: 14px; min-height: var(--toolbar-height); padding: 7px 12px; border-bottom: 1px solid #cbd1d9; background: #f8f9fb; box-shadow: 0 2px 8px rgba(20, 31, 45, .1); }
+.brand { white-space: nowrap; }
+.tool-group { display: flex; align-items: center; gap: 5px; }
+.toolbar-end { margin-left: auto; }
+.toolbar button, .toolbar input { min-height: 34px; border: 1px solid #c7ced8; border-radius: 7px; color: inherit; background: #fff; font: inherit; }
+.toolbar button { padding: 0 11px; cursor: pointer; }
+.toolbar button:hover { border-color: #6f55d9; }
+.toolbar input { width: 58px; padding: 4px 7px; text-align: center; }
+#viewer-status { overflow: hidden; color: #687386; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+#viewer-status.error { color: #b42318; }
+#viewer-container { position: absolute; inset: var(--toolbar-height) 0 0; overflow: auto; outline: none; }
+.pdfViewer { padding: 14px 0 28px; }
+.pdfViewer .page { margin: 0 auto 14px; border: 0; box-shadow: 0 3px 14px rgba(15, 23, 42, .18); }
+
+@media (max-width: 760px) {
+  :root { --toolbar-height: 96px; }
+  .toolbar { flex-wrap: wrap; }
+  .brand, #viewer-status { display: none; }
+  .toolbar-end { margin-left: 0; }
+}
+
+@media (prefers-color-scheme: dark) {
+  body { color: #e7eaf0; background: #151a21; }
+  .toolbar { border-color: #3d4652; background: #242b35; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
+  .toolbar button, .toolbar input { border-color: #4a5563; background: #303946; }
+  #viewer-status { color: #aeb6c2; }
+}

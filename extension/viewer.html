@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>词汇 PDF 阅读器</title>
+  <link rel="stylesheet" href="vendor/pdfjs/web/pdf_viewer.css">
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <header class="toolbar">
+    <strong class="brand">词汇 PDF 阅读器</strong>
+    <div class="tool-group" aria-label="页码">
+      <input id="page-number" type="number" min="1" value="1" aria-label="当前页">
+      <span>/ <span id="page-count">0</span></span>
+    </div>
+    <div class="tool-group" aria-label="缩放">
+      <button id="zoom-out" type="button" aria-label="缩小">−</button>
+      <button id="zoom-in" type="button" aria-label="放大">＋</button>
+      <button id="fit-width" type="button">适合宽度</button>
+    </div>
+    <span id="viewer-status" role="status">正在加载…</span>
+    <div class="tool-group toolbar-end">
+      <button id="download" type="button">下载</button>
+      <button id="open-native" type="button">返回 Chrome 阅读器</button>
+    </div>
+  </header>
+  <div id="viewer-container" role="main" tabindex="0">
+    <div id="viewer" class="pdfViewer"></div>
+  </div>
+  <script src="lib.js"></script>
+  <script src="lookup-popover.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

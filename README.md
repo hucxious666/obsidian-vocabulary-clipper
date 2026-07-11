@@ -1,6 +1,6 @@
 # Obsidian 词汇采集器
 
-在 Chrome PDF 中选中英文单词或短语，通过右键菜单直接写入指定 Obsidian Chapter 或 NEWS Markdown 文件。
+在普通网页或自带 PDF 阅读器中双击英文单词，查看音标、词性和完整中文释义，并直接写入指定 Obsidian Chapter 或 NEWS Markdown 文件。
 
 ## 安装
 
@@ -16,6 +16,8 @@
    %LOCALAPPDATA%\ObsidianVocabularyClipper\app\extension
    ```
 
+   如需读取本地 PDF，请在扩展的“详情”页开启“允许访问文件网址”。
+
 3. 打开扩展的“详情 → 扩展程序选项”，确认两个 Markdown 路径，选择当前 Chapter，并填写百度翻译 APP ID 与密钥。
 4. 点击“保存设置”，再点击“测试连接”。
 
@@ -23,10 +25,15 @@
 
 ## 使用
 
-- 在 Chrome PDF 中选中 1–5 个英文单词。
-- 右键选择“加入 Chapter N”或“加入 NEWS”。
+- 在普通网页中双击英文单词，会在选词附近显示分组释义卡片。
+- 打开在线或本地 PDF 时，扩展默认切换到“词汇 PDF 阅读器”；阅读器支持连续滚动、页码、缩放、适合宽度、下载和返回 Chrome 原阅读器。
+- 释义卡片显示单词、音标、按词性分组的完整中文释义，并提供“加入 Chapter N”和“加入 NEWS”。
+- 原有右键选词菜单继续支持 1–5 个英文单词或短语。
 - 成功时扩展图标短暂显示 `✓`；重复、查询失败或写入失败时弹出通知。
 - Chapter 目标只在当前章节内去重；NEWS 在整个 NEWS 文件内去重。
+- 可在扩展设置页分别关闭“网页双击查词”或“自动使用词汇 PDF 阅读器”。
+
+> Chrome 设置页、Chrome Web Store 等受限页面不允许扩展注入双击查词脚本。若某个在线 PDF 因登录或站点限制无法加载，可点击“返回 Chrome 阅读器”。
 
 ## 释义来源
 
@@ -65,7 +72,10 @@
 python -m unittest discover -s tests -v
 node tests\js\test_extension_lib.js
 node --check extension\background.js
+node --check extension\content.js
+node --check extension\lookup-popover.js
 node --check extension\options.js
+node --check extension\viewer.js
 ```
 
 ## 卸载
@@ -78,4 +88,5 @@ powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 
 ## 第三方数据
 
-音标数据来自 [ECDICT](https://github.com/skywind3000/ECDICT)，采用 MIT License。安装包固定校验原始 CSV 的 SHA-256；若上游内容发生变化，安装会停止并提示哈希不匹配。
+- 音标和释义数据来自 [ECDICT](https://github.com/skywind3000/ECDICT)，采用 MIT License。
+- PDF 阅读器使用 [Mozilla PDF.js](https://github.com/mozilla/pdf.js) 6.1.200，采用 Apache-2.0 License，必要运行文件和许可证已随扩展固定打包。
