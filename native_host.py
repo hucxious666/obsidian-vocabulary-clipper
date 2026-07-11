@@ -54,6 +54,17 @@ def _enable_binary_stdio() -> None:
         msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
 
+def serve_messages(input_stream, output_stream, service: ClipperService) -> None:
+    while True:
+        message = read_message(input_stream)
+        if message is None:
+            return
+        response = service.handle(message)
+        if "requestId" in message:
+            response = {**response, "requestId": message["requestId"]}
+        write_message(output_stream, response)
+
+
 def main() -> int:
     _enable_binary_stdio()
     origin = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -61,10 +72,7 @@ def main() -> int:
         write_message(sys.stdout.buffer, {"ok": False, "status": "invalid", "message": "扩展来源未授权"})
         return 2
     try:
-        message = read_message(sys.stdin.buffer)
-        if message is None:
-            return 0
-        write_message(sys.stdout.buffer, create_service().handle(message))
+        serve_messages(sys.stdin.buffer, sys.stdout.buffer, create_service())
         return 0
     except Exception:
         write_message(
@@ -76,4 +84,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

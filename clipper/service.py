@@ -12,7 +12,7 @@ from .markdown_writer import (
     find_chapters,
     write_entry_atomic,
 )
-from .meaning import normalize_ecdict_translation
+from .meaning import normalize_ecdict_translation, parse_definition_groups
 from .selection import InvalidSelection, normalize_selection
 from .translator import BaiduTranslateError, BaiduTranslator
 from .youdao import YoudaoDictionaryClient, YoudaoDictionaryError
@@ -25,6 +25,7 @@ class ClipperService:
         "save_settings",
         "test_connection",
         "test_youdao_dictionary",
+        "lookup_definition",
         "add_entry",
     }
 
@@ -61,6 +62,8 @@ class ClipperService:
                 return self._test_connection()
             if action == "test_youdao_dictionary":
                 return self._test_youdao_dictionary(message)
+            if action == "lookup_definition":
+                return self._lookup_definition(message)
             return self._add_entry(message)
         except (SettingsValidationError, InvalidSelection, ValueError) as error:
             return self._error("invalid", str(error))
@@ -132,6 +135,27 @@ class ClipperService:
                 "word": result.word,
                 "phonetic": result.phonetic,
                 "explains": result.explains,
+            },
+        }
+
+    def _lookup_definition(self, message: dict) -> dict:
+        word = normalize_selection(str(message.get("text") or ""))
+        entry = self.dictionary_factory(self.dictionary_path).lookup(word)
+        groups = parse_definition_groups(entry.translation)
+        source = "ecdict"
+        if not groups:
+            config = self.config_store.load()
+            translation = self.translator_factory(config.app_id, config.secret_key).translate(word)
+            groups = [{"partOfSpeech": "释义", "definitions": [translation]}]
+            source = "baidu"
+        return {
+            "ok": True,
+            "status": "ok",
+            "definition": {
+                "word": word,
+                "phonetic": entry.phonetic,
+                "source": source,
+                "groups": groups,
             },
         }
 

@@ -5,6 +5,8 @@ const DEFAULTS = {
   chapters: Array.from({ length: 22 }, (_, index) => index + 1),
   credentialsConfigured: false,
   youdaoCredentialsConfigured: false,
+  doubleClickLookupEnabled: true,
+  autoOpenPdfEnabled: true,
 };
 
 const elements = {
@@ -20,6 +22,8 @@ const elements = {
   youdaoTestWord: document.querySelector("#youdao-test-word"),
   youdaoPreview: document.querySelector("#youdao-preview"),
   message: document.querySelector("#message"),
+  doubleClickLookup: document.querySelector("#double-click-lookup"),
+  autoOpenPdf: document.querySelector("#auto-open-pdf"),
 };
 
 function callNative(payload) {
@@ -56,9 +60,25 @@ function applySettings(settings) {
 }
 
 async function load() {
-  const response = await callNative({ action: "get_settings" });
+  const [response, preferences] = await Promise.all([
+    callNative({ action: "get_settings" }),
+    chrome.storage.local.get({
+      doubleClickLookupEnabled: true,
+      autoOpenPdfEnabled: true,
+    }),
+  ]);
   applySettings(response && response.ok ? response : DEFAULTS);
+  elements.doubleClickLookup.checked = preferences.doubleClickLookupEnabled;
+  elements.autoOpenPdf.checked = preferences.autoOpenPdfEnabled;
   if (!response || !response.ok) showMessage("请保存设置并配置百度凭据。", true);
+}
+
+async function saveBrowserPreferences() {
+  await chrome.storage.local.set({
+    doubleClickLookupEnabled: elements.doubleClickLookup.checked,
+    autoOpenPdfEnabled: elements.autoOpenPdf.checked,
+  });
+  showMessage("浏览体验设置已保存。");
 }
 
 async function browse(target) {
@@ -120,4 +140,6 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
 document.querySelector("#save").addEventListener("click", save);
 document.querySelector("#test").addEventListener("click", testConnection);
 document.querySelector("#test-youdao").addEventListener("click", testYoudaoDictionary);
+elements.doubleClickLookup.addEventListener("change", saveBrowserPreferences);
+elements.autoOpenPdf.addEventListener("change", saveBrowserPreferences);
 load();

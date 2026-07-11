@@ -88,6 +88,44 @@ class ClipperServiceTests(unittest.TestCase):
         self.assertEqual(["fallback"], FakeTranslator.calls)
         self.assertIn("百度兜底", self.chapter.read_text(encoding="utf-8"))
 
+    def test_lookup_definition_returns_grouped_details_without_writing(self):
+        chapter_before = self.chapter.read_bytes()
+        news_before = self.news.read_bytes()
+
+        response = self.service.handle(
+            {"action": "lookup_definition", "text": "word"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("ok", response["status"])
+        self.assertEqual(
+            {
+                "word": "word",
+                "phonetic": "wɜːd",
+                "source": "ecdict",
+                "groups": [
+                    {"partOfSpeech": "n.", "definitions": ["单词", "词语"]}
+                ],
+            },
+            response["definition"],
+        )
+        self.assertEqual(chapter_before, self.chapter.read_bytes())
+        self.assertEqual(news_before, self.news.read_bytes())
+        self.assertEqual([], FakeTranslator.calls)
+
+    def test_lookup_definition_uses_baidu_only_when_ecdict_meaning_is_empty(self):
+        response = self.service.handle(
+            {"action": "lookup_definition", "text": "fallback"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("baidu", response["definition"]["source"])
+        self.assertEqual(
+            [{"partOfSpeech": "释义", "definitions": ["百度兜底"]}],
+            response["definition"]["groups"],
+        )
+        self.assertEqual(["fallback"], FakeTranslator.calls)
+
     def test_youdao_dictionary_test_returns_preview_without_writing(self):
         before = self.chapter.read_bytes()
         response = self.service.handle(
@@ -130,7 +168,7 @@ class ClipperServiceTests(unittest.TestCase):
     def test_browse_file_returns_path_without_changing_configuration(self):
         response = self.service.handle({"action": "browse_file", "target": "news"})
         self.assertTrue(response["ok"])
-        self.assertEqual(str(self.news), response["path"])
+        self.assertEqual(str(self.news.resolve()), response["path"])
         self.assertEqual(str(self.chapter.resolve()), self.store.load().chapter_file)
 
     def test_youdao_credentials_must_be_updated_as_a_pair(self):
