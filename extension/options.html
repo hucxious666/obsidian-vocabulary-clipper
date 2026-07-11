@@ -10,7 +10,7 @@
   <main>
     <header>
       <div class="mark">W</div>
-      <div><h1>Obsidian 词汇采集器</h1><p>双击查词，并添加到指定 Chapter 或 NEWS。</p></div>
+      <div><h1>Obsidian 词汇采集器</h1><p>选区查词与翻译，并将单词添加到 Chapter 或 NEWS。</p></div>
     </header>
 
     <section>
@@ -27,7 +27,7 @@
       <h2>浏览体验</h2>
       <label class="check-row" for="double-click-lookup">
         <input id="double-click-lookup" type="checkbox">
-        <span><strong>网页双击查词</strong><small>在普通网页中双击英文单词时显示释义。</small></span>
+        <span><strong>网页选区查词与翻译</strong><small>选中英文单词显示释义，选中英文句子显示翻译。</small></span>
       </label>
       <label class="check-row" for="auto-open-pdf">
         <input id="auto-open-pdf" type="checkbox">
@@ -46,16 +46,16 @@
     </section>
 
     <section>
-      <div class="section-title"><h2>有道词典预览</h2><span id="youdao-credential-status" class="status">未配置</span></div>
-      <p class="hint">可选功能。凭据同样使用 Windows DPAPI 加密；查询结果只在此页临时显示，不写入笔记、不缓存。</p>
+      <div class="section-title"><h2>有道文本翻译后备</h2><span id="youdao-credential-status" class="status">未配置</span></div>
+      <p class="hint">百度翻译失败时自动使用有道 NMT。凭据使用 Windows DPAPI 加密，测试结果不会写入笔记或缓存。</p>
       <label for="youdao-app-key">App Key</label>
       <input id="youdao-app-key" type="password" autocomplete="off" placeholder="输入新的 App Key">
       <label for="youdao-secret-key">App Secret</label>
       <input id="youdao-secret-key" type="password" autocomplete="off" placeholder="输入新的 App Secret">
-      <label for="youdao-test-word">测试单词</label>
+      <label for="youdao-test-text">测试句子</label>
       <div class="path-row">
-        <input id="youdao-test-word" type="text" value="ignominious" autocomplete="off">
-        <button id="test-youdao" class="secondary">测试有道词典</button>
+        <input id="youdao-test-text" type="text" value="Liverpool are playing well." autocomplete="off">
+        <button id="test-youdao" class="secondary">测试有道翻译</button>
       </div>
       <pre id="youdao-preview" class="preview" hidden></pre>
     </section>

@@ -27,6 +27,8 @@
 
 .lookup-heading { display: grid; gap: 2px; }
 .lookup-word { font-size: 20px; line-height: 1.25; overflow-wrap: anywhere; }
+.lookup-original { max-height: 76px; overflow: auto; color: #687386; font-size: 13px; font-weight: 600; white-space: pre-wrap; }
+.lookup-translation { padding: 8px 18px 12px; font-size: 16px; line-height: 1.7; white-space: pre-wrap; }
 .lookup-phonetic { color: #687386; font-size: 13px; }
 .lookup-groups { max-height: 250px; overflow: auto; padding: 0 18px; }
 .lookup-group { padding: 10px 0; border-top: 1px solid #e7eaf0; }
@@ -52,7 +54,7 @@
 @media (prefers-color-scheme: dark) {
   :host { color: #e6e9ef; }
   .lookup-card { border-color: #46505e; background: #202630; box-shadow: 0 16px 44px rgba(0, 0, 0, .45); }
-  .lookup-phonetic, .lookup-source { color: #aab2bf; }
+  .lookup-phonetic, .lookup-source, .lookup-original { color: #aab2bf; }
   .lookup-group { border-color: #3a4350; }
   .lookup-pos { color: #d9d0ff; background: #493a78; }
   .lookup-status { color: #c1c7d0; }

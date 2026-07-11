@@ -28,52 +28,62 @@ assert.strictEqual(ui.safeMessage({ message: "ok" }), "ok");
 assert.strictEqual(ui.safeMessage({ message: "a".repeat(500) }).length, 200);
 
 assert.strictEqual(
-  ui.formatYoudaoPreview({
-    word: "ignominious",
-    phonetic: "ˌɪɡnəˈmɪniəs",
-    explains: ["adj. 可耻的", "adj. 不名誉的"],
+  ui.formatTranslationPreview({
+    sourceText: "Liverpool are playing well.",
+    translatedText: "利物浦踢得很好。",
+    source: "youdao",
   }),
-  "ignominious /ˌɪɡnəˈmɪniəs/\n• adj. 可耻的\n• adj. 不名誉的",
+  "Liverpool are playing well.\n→ 利物浦踢得很好。\n来源：有道翻译",
 );
-assert.strictEqual(ui.formatYoudaoPreview(null), "");
+assert.strictEqual(ui.formatTranslationPreview(null), "");
 
 assert.strictEqual(ui.normalizeLookupText("  “well-being,”  "), "well-being");
 assert.strictEqual(ui.normalizeLookupText("two words"), "");
 assert.strictEqual(ui.normalizeLookupText("中文"), "");
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 0, detail: 2 }), true);
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 0, detail: 1 }), false);
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 2, detail: 2 }), false);
+assert.deepStrictEqual(ui.classifySelection(" player "), {
+  mode: "definition",
+  text: "player",
+});
+assert.deepStrictEqual(ui.classifySelection("Liverpool\nare playing well."), {
+  mode: "translation",
+  text: "Liverpool are playing well.",
+});
+assert.deepStrictEqual(ui.classifySelection("Liverpool won 2 games."), {
+  mode: "translation",
+  text: "Liverpool won 2 games.",
+});
+assert.strictEqual(ui.classifySelection("hello world 世界"), null);
+assert.strictEqual(ui.classifySelection("hello world привет"), null);
+assert.strictEqual(ui.classifySelection("one ".repeat(126)), null);
 const ordinaryText = "Double-click ordinary words.";
 assert.strictEqual(
   ui.wordAtOffset(ordinaryText, ordinaryText.indexOf("ordinary") + 3),
   "ordinary",
 );
 assert.strictEqual(ui.wordAtOffset("well-being works", 5), "well-being");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: true,
-  selectedText: "Liverpool",
-}), "Liverpool");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: true,
-  selectedText: "two words",
-}), "");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: false,
-  selectedText: "Liverpool",
-}), "");
-
 let selectedText = "";
-let scheduledLookup = null;
-let lookedUpWord = "";
-ui.scheduleLookupFromSelection(
-  () => ({ toString: () => selectedText }),
-  (word) => { lookedUpWord = word; },
-  (callback) => { scheduledLookup = callback; },
+let timerId = 0;
+const pendingTimers = new Map();
+const dispatchedActions = [];
+const dispatcher = ui.createSelectionDispatcher(
+  (action) => dispatchedActions.push(action),
+  {
+    set(callback) {
+      const id = ++timerId;
+      pendingTimers.set(id, callback);
+      return id;
+    },
+    clear(id) { pendingTimers.delete(id); },
+  },
 );
-assert.strictEqual(lookedUpWord, "");
-selectedText = "ordinary";
-scheduledLookup();
-assert.strictEqual(lookedUpWord, "ordinary");
+selectedText = "ordinary words";
+dispatcher.schedule(() => ({ toString: () => selectedText }), null, 200);
+selectedText = "ordinary words in context";
+dispatcher.schedule(() => ({ toString: () => selectedText }), null, 200);
+for (const callback of pendingTimers.values()) callback();
+assert.deepStrictEqual(dispatchedActions, [
+  { mode: "translation", text: "ordinary words in context" },
+]);
 
 assert.deepStrictEqual(
   ui.positionPopover(

@@ -8,6 +8,7 @@
       this.anchor = null;
       this.host = document.createElement("div");
       this.host.id = "obsidian-vocabulary-lookup";
+      this.host.dataset.ovcVersion = chrome.runtime.getManifest().version;
       this.host.style.setProperty("all", "initial", "important");
       this.host.style.setProperty("position", "fixed", "important");
       this.host.style.setProperty("z-index", "2147483647", "important");
@@ -19,7 +20,7 @@
       this.card = document.createElement("section");
       this.card.className = "lookup-card";
       this.card.setAttribute("role", "dialog");
-      this.card.setAttribute("aria-label", "单词释义");
+      this.card.setAttribute("aria-label", "词汇释义或翻译");
       const stylesheet = document.createElement("link");
       stylesheet.rel = "stylesheet";
       stylesheet.href = chrome.runtime.getURL("lookup-popover.css");
@@ -59,10 +60,27 @@
       }
     }
 
-    renderLoading(word) {
+    async translate(text, anchor) {
+      const request = ++this.sequence;
+      this.anchor = anchor;
+      this.renderLoading(text, "正在翻译…", "lookup-original");
+      try {
+        const response = await this.sendNative({ action: "translate_selection", text });
+        if (request !== this.sequence) return;
+        if (!response || !response.ok) {
+          this.renderError(text, response && response.message);
+          return;
+        }
+        this.renderTranslation(response.translation);
+      } catch (_error) {
+        if (request === this.sequence) this.renderError(text, "无法连接本地翻译服务");
+      }
+    }
+
+    renderLoading(word, message = "正在查询释义…", className = "lookup-word") {
       this.card.replaceChildren();
-      const title = this.element("strong", "lookup-word", word);
-      const loading = this.element("div", "lookup-loading", "正在查询释义…");
+      const title = this.element("strong", className, word);
+      const loading = this.element("div", "lookup-loading", message);
       this.card.append(title, loading);
       this.open();
     }
@@ -98,6 +116,22 @@
       );
       const source = this.element("div", "lookup-source", definition.source === "baidu" ? "来源：百度翻译" : "来源：ECDICT");
       this.card.append(header, groups, source, status, actions);
+      this.open();
+    }
+
+    renderTranslation(translation) {
+      this.card.replaceChildren();
+      const header = this.element("header", "lookup-header");
+      header.append(
+        this.element("div", "lookup-original", translation.sourceText || ""),
+        this.closeButton(),
+      );
+      const translated = this.element(
+        "div", "lookup-translation", translation.translatedText || "",
+      );
+      const sourceName = translation.source === "youdao" ? "有道翻译" : "百度翻译";
+      const source = this.element("div", "lookup-source", `来源：${sourceName}`);
+      this.card.append(header, translated, source);
       this.open();
     }
 

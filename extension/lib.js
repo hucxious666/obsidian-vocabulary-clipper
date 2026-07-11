@@ -28,15 +28,10 @@
     return { title: titles[status] || "词汇添加失败", message: safeMessage(response) };
   }
 
-  function formatYoudaoPreview(preview) {
-    if (!preview || typeof preview.word !== "string") return "";
-    const phonetic = typeof preview.phonetic === "string" && preview.phonetic
-      ? ` /${preview.phonetic.replace(/^\/+|\/+$/g, "")}/`
-      : "";
-    const explains = Array.isArray(preview.explains)
-      ? preview.explains.filter((item) => typeof item === "string" && item.trim())
-      : [];
-    return [`${preview.word}${phonetic}`, ...explains.map((item) => `• ${item.trim()}`)].join("\n");
+  function formatTranslationPreview(preview) {
+    if (!preview || typeof preview.sourceText !== "string") return "";
+    const source = preview.source === "youdao" ? "有道翻译" : "百度翻译";
+    return `${preview.sourceText}\n→ ${preview.translatedText || ""}\n来源：${source}`;
   }
 
   function normalizeLookupText(value) {
@@ -45,8 +40,23 @@
     return /^[A-Za-z]+(?:['’-][A-Za-z]+)*$/.test(text) && text.length <= 120 ? text : "";
   }
 
-  function isSecondLeftMouseUp(event) {
-    return Boolean(event && event.button === 0 && event.detail === 2);
+  function normalizeTranslationText(value) {
+    const text = String(value || "").normalize("NFC").trim().replace(/\s+/g, " ");
+    const hasNonEnglishLetter = Array.from(text).some(
+      (character) => /\p{L}/u.test(character) && !/[A-Za-z]/.test(character),
+    );
+    if (!text || text.length > 500 || hasNonEnglishLetter) {
+      return "";
+    }
+    const words = text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
+    return words.length >= 2 ? text : "";
+  }
+
+  function classifySelection(value) {
+    const definition = normalizeLookupText(value);
+    if (definition) return { mode: "definition", text: definition };
+    const translation = normalizeTranslationText(value);
+    return translation ? { mode: "translation", text: translation } : null;
   }
 
   function wordAtOffset(value, offset) {
@@ -62,18 +72,21 @@
     return normalizeLookupText(text.slice(start, end));
   }
 
-  function selectionWordForDisplay(state) {
-    if (!state || !state.enabled) return "";
-    return normalizeLookupText(state.selectedText);
-  }
-
-  function scheduleLookupFromSelection(readSelection, onLookup, schedule) {
-    const defer = schedule || ((callback) => setTimeout(callback, 0));
-    defer(() => {
-      const selection = readSelection();
-      const word = normalizeLookupText(selection ? selection.toString() : "");
-      if (word) onLookup(word, selection);
-    });
+  function createSelectionDispatcher(onAction, timers = {}) {
+    const setTimer = timers.set || ((callback, delay) => setTimeout(callback, delay));
+    const clearTimer = timers.clear || ((timer) => clearTimeout(timer));
+    let pendingTimer = null;
+    return {
+      schedule(readSelection, context, delay = 0) {
+        if (pendingTimer !== null) clearTimer(pendingTimer);
+        pendingTimer = setTimer(() => {
+          pendingTimer = null;
+          const selection = readSelection();
+          const action = classifySelection(selection ? selection.toString() : "");
+          if (action) onAction(action, selection, context);
+        }, delay);
+      },
+    };
   }
 
   function positionPopover(rect, popover, viewport) {
@@ -160,18 +173,17 @@
 
   return {
     addPdfBypass,
+    classifySelection,
+    createSelectionDispatcher,
     createNativeClient,
-    formatYoudaoPreview,
+    formatTranslationPreview,
     hasPdfBypass,
     isSafePdfSource,
-    isSecondLeftMouseUp,
     menuTitles,
     normalizeLookupText,
     notificationFor,
     positionPopover,
     safeMessage,
-    scheduleLookupFromSelection,
-    selectionWordForDisplay,
     shouldRedirectPdf,
     wordAtOffset,
   };

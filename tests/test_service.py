@@ -6,7 +6,7 @@ from clipper.config import AppConfig, ConfigStore
 from clipper.dictionary import DictionaryEntry, LookupNotFound
 from clipper.service import ClipperService
 from clipper.translator import BaiduTranslateError
-from clipper.youdao import YoudaoDictionaryResult
+from clipper.youdao import YoudaoTranslateError
 
 
 class MemoryProtector:
@@ -30,12 +30,18 @@ class FakeTranslator:
 
     def translate(self, word):
         self.calls.append(word)
-        return {"fallback": "百度兜底"}.get(word, "百度不应调用")
+        return {
+            "fallback": "百度兜底",
+            "Liverpool are playing well.": "利物浦踢得很好。",
+        }.get(word, "百度不应调用")
 
 
 class FakeYoudao:
-    def lookup(self, word):
-        return YoudaoDictionaryResult(word, "wɜːd", ["n. 单词", "n. 词语"])
+    calls = []
+
+    def translate(self, text):
+        self.calls.append(text)
+        return "有道翻译结果"
 
 
 class ClipperServiceTests(unittest.TestCase):
@@ -59,6 +65,7 @@ class ClipperServiceTests(unittest.TestCase):
             )
         )
         FakeTranslator.calls = []
+        FakeYoudao.calls = []
         self.service = ClipperService(
             self.store,
             root / "dict.db",
@@ -126,14 +133,82 @@ class ClipperServiceTests(unittest.TestCase):
         )
         self.assertEqual(["fallback"], FakeTranslator.calls)
 
-    def test_youdao_dictionary_test_returns_preview_without_writing(self):
+    def test_translate_selection_uses_baidu_without_writing(self):
+        chapter_before = self.chapter.read_bytes()
+        news_before = self.news.read_bytes()
+        response = self.service.handle(
+            {"action": "translate_selection", "text": "Liverpool are playing well."}
+        )
+        self.assertEqual(
+            {
+                "sourceText": "Liverpool are playing well.",
+                "translatedText": "利物浦踢得很好。",
+                "source": "baidu",
+            },
+            response["translation"],
+        )
+        self.assertEqual([], FakeYoudao.calls)
+        self.assertEqual(chapter_before, self.chapter.read_bytes())
+        self.assertEqual(news_before, self.news.read_bytes())
+
+    def test_translate_selection_falls_back_to_youdao(self):
+        class FailingBaidu:
+            def translate(self, _text):
+                raise BaiduTranslateError("百度翻译错误 54003")
+
+        self.service.translator_factory = lambda _id, _key: FailingBaidu()
+        response = self.service.handle(
+            {"action": "translate_selection", "text": "Liverpool are playing well."}
+        )
+        self.assertEqual("有道翻译结果", response["translation"]["translatedText"])
+        self.assertEqual("youdao", response["translation"]["source"])
+        self.assertEqual(["Liverpool are playing well."], FakeYoudao.calls)
+
+    def test_translate_selection_reports_missing_youdao_fallback(self):
+        config = self.store.load()
+        self.store.save(AppConfig(
+            config.chapter_file, config.news_file, config.selected_chapter,
+            config.app_id, config.secret_key,
+        ))
+
+        class FailingBaidu:
+            def translate(self, _text):
+                raise BaiduTranslateError("百度翻译错误 54003")
+
+        self.service.translator_factory = lambda _id, _key: FailingBaidu()
+        response = self.service.handle(
+            {"action": "translate_selection", "text": "Liverpool are playing well."}
+        )
+        self.assertEqual("lookup_failed", response["status"])
+        self.assertIn("未配置有道翻译后备", response["message"])
+
+    def test_translate_selection_reports_both_provider_failures_safely(self):
+        class FailingBaidu:
+            def translate(self, _text):
+                raise BaiduTranslateError("百度翻译错误 54003")
+
+        class FailingYoudao:
+            def translate(self, _text):
+                raise YoudaoTranslateError("有道文本翻译错误 110")
+
+        self.service.translator_factory = lambda _id, _key: FailingBaidu()
+        self.service.youdao_factory = lambda _id, _key: FailingYoudao()
+        response = self.service.handle(
+            {"action": "translate_selection", "text": "Liverpool are playing well."}
+        )
+        self.assertEqual("lookup_failed", response["status"])
+        self.assertIn("百度和有道翻译均失败", response["message"])
+        self.assertNotIn("secret", repr(response))
+
+    def test_youdao_translation_test_returns_preview_without_writing(self):
         before = self.chapter.read_bytes()
         response = self.service.handle(
-            {"action": "test_youdao_dictionary", "text": "word"}
+            {"action": "test_youdao_translation", "text": "Liverpool are playing well."}
         )
         self.assertTrue(response["ok"])
-        self.assertEqual("word", response["preview"]["word"])
-        self.assertEqual(["n. 单词", "n. 词语"], response["preview"]["explains"])
+        self.assertEqual("Liverpool are playing well.", response["preview"]["sourceText"])
+        self.assertEqual("有道翻译结果", response["preview"]["translatedText"])
+        self.assertEqual("youdao", response["preview"]["source"])
         self.assertEqual(before, self.chapter.read_bytes())
         self.assertNotIn("youdao-secret", repr(response))
 

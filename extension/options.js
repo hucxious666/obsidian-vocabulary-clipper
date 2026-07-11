@@ -19,7 +19,7 @@ const elements = {
   youdaoAppKey: document.querySelector("#youdao-app-key"),
   youdaoSecretKey: document.querySelector("#youdao-secret-key"),
   youdaoCredentialStatus: document.querySelector("#youdao-credential-status"),
-  youdaoTestWord: document.querySelector("#youdao-test-word"),
+  youdaoTestText: document.querySelector("#youdao-test-text"),
   youdaoPreview: document.querySelector("#youdao-preview"),
   message: document.querySelector("#message"),
   doubleClickLookup: document.querySelector("#double-click-lookup"),
@@ -112,20 +112,20 @@ async function save() {
   showMessage("设置已保存，右键菜单已更新。");
 }
 
-async function testYoudaoDictionary() {
+async function testYoudaoTranslation() {
   elements.youdaoPreview.hidden = true;
   elements.youdaoPreview.textContent = "";
-  showMessage("正在查询有道词典…");
+  showMessage("正在调用有道文本翻译…");
   const response = await callNative({
-    action: "test_youdao_dictionary",
-    text: elements.youdaoTestWord.value,
+    action: "test_youdao_translation",
+    text: elements.youdaoTestText.value,
   });
   if (!response || !response.ok) {
-    return showMessage((response && response.message) || "有道词典测试失败", true);
+    return showMessage((response && response.message) || "有道文本翻译测试失败", true);
   }
-  elements.youdaoPreview.textContent = ClipperUi.formatYoudaoPreview(response.preview);
+  elements.youdaoPreview.textContent = ClipperUi.formatTranslationPreview(response.preview);
   elements.youdaoPreview.hidden = false;
-  showMessage(response.message || "有道词典查询成功。");
+  showMessage(response.message || "有道文本翻译成功。");
 }
 
 async function testConnection() {
@@ -139,7 +139,7 @@ document.querySelectorAll("[data-browse]").forEach((button) => {
 });
 document.querySelector("#save").addEventListener("click", save);
 document.querySelector("#test").addEventListener("click", testConnection);
-document.querySelector("#test-youdao").addEventListener("click", testYoudaoDictionary);
+document.querySelector("#test-youdao").addEventListener("click", testYoudaoTranslation);
 elements.doubleClickLookup.addEventListener("change", saveBrowserPreferences);
 elements.autoOpenPdf.addEventListener("change", saveBrowserPreferences);
 load();

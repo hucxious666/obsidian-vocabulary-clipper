@@ -13,9 +13,9 @@ from .markdown_writer import (
     write_entry_atomic,
 )
 from .meaning import normalize_ecdict_translation, parse_definition_groups
-from .selection import InvalidSelection, normalize_selection
+from .selection import InvalidSelection, normalize_selection, normalize_translation_selection
 from .translator import BaiduTranslateError, BaiduTranslator
-from .youdao import YoudaoDictionaryClient, YoudaoDictionaryError
+from .youdao import YoudaoTranslateError, YoudaoTranslator
 
 
 class ClipperService:
@@ -24,8 +24,9 @@ class ClipperService:
         "browse_file",
         "save_settings",
         "test_connection",
-        "test_youdao_dictionary",
+        "test_youdao_translation",
         "lookup_definition",
+        "translate_selection",
         "add_entry",
     }
 
@@ -36,7 +37,7 @@ class ClipperService:
         backup_root: Path,
         dictionary_factory: Callable = DictionaryLookup,
         translator_factory: Callable = BaiduTranslator,
-        youdao_factory: Callable = YoudaoDictionaryClient,
+        youdao_factory: Callable = YoudaoTranslator,
         file_picker: Callable[[str], str] | None = None,
     ):
         self.config_store = config_store
@@ -60,14 +61,16 @@ class ClipperService:
                 return self._save_settings(message)
             if action == "test_connection":
                 return self._test_connection()
-            if action == "test_youdao_dictionary":
-                return self._test_youdao_dictionary(message)
+            if action == "test_youdao_translation":
+                return self._test_youdao_translation(message)
             if action == "lookup_definition":
                 return self._lookup_definition(message)
+            if action == "translate_selection":
+                return self._translate_selection(message)
             return self._add_entry(message)
         except (SettingsValidationError, InvalidSelection, ValueError) as error:
             return self._error("invalid", str(error))
-        except (LookupNotFound, BaiduTranslateError, YoudaoDictionaryError) as error:
+        except (LookupNotFound, BaiduTranslateError, YoudaoTranslateError) as error:
             return self._error("lookup_failed", str(error))
         except Exception:
             return self._error("write_failed", "本地服务发生未预期错误")
@@ -119,22 +122,22 @@ class ClipperService:
         self.translator_factory(config.app_id, config.secret_key).translate("test")
         return {"ok": True, "status": "ok", "message": "词典、百度翻译和文件配置可用"}
 
-    def _test_youdao_dictionary(self, message: dict) -> dict:
-        word = normalize_selection(str(message.get("text") or ""))
+    def _test_youdao_translation(self, message: dict) -> dict:
+        text = normalize_translation_selection(str(message.get("text") or ""))
         config = self.config_store.load()
         if not config.youdao_app_key or not config.youdao_secret_key:
             return self._error("invalid", "请先保存有道 App Key 和 App Secret")
-        result = self.youdao_factory(
+        translated = self.youdao_factory(
             config.youdao_app_key, config.youdao_secret_key
-        ).lookup(word)
+        ).translate(text)
         return {
             "ok": True,
             "status": "ok",
-            "message": "有道词典查询成功（结果仅预览，不会写入）",
+            "message": "有道文本翻译成功（结果仅预览，不会写入）",
             "preview": {
-                "word": result.word,
-                "phonetic": result.phonetic,
-                "explains": result.explains,
+                "sourceText": text,
+                "translatedText": translated,
+                "source": "youdao",
             },
         }
 
@@ -156,6 +159,36 @@ class ClipperService:
                 "phonetic": entry.phonetic,
                 "source": source,
                 "groups": groups,
+            },
+        }
+
+    def _translate_selection(self, message: dict) -> dict:
+        text = normalize_translation_selection(str(message.get("text") or ""))
+        config = self.config_store.load()
+        source = "baidu"
+        try:
+            translated = self.translator_factory(config.app_id, config.secret_key).translate(text)
+        except BaiduTranslateError as baidu_error:
+            if not config.youdao_app_key or not config.youdao_secret_key:
+                raise BaiduTranslateError(
+                    f"{baidu_error}；未配置有道翻译后备"
+                ) from baidu_error
+            try:
+                translated = self.youdao_factory(
+                    config.youdao_app_key, config.youdao_secret_key
+                ).translate(text)
+            except YoudaoTranslateError as youdao_error:
+                raise YoudaoTranslateError(
+                    f"百度和有道翻译均失败：{baidu_error}；{youdao_error}"
+                ) from youdao_error
+            source = "youdao"
+        return {
+            "ok": True,
+            "status": "ok",
+            "translation": {
+                "sourceText": text,
+                "translatedText": translated,
+                "source": source,
             },
         }
 

@@ -1,6 +1,6 @@
 import unittest
 
-from clipper.selection import InvalidSelection, normalize_selection
+from clipper.selection import InvalidSelection, normalize_selection, normalize_translation_selection
 
 
 class NormalizeSelectionTests(unittest.TestCase):
@@ -18,6 +18,24 @@ class NormalizeSelectionTests(unittest.TestCase):
     def test_rejects_non_english_selection(self):
         with self.assertRaises(InvalidSelection):
             normalize_selection("hello 世界")
+
+    def test_normalizes_sentence_for_translation(self):
+        self.assertEqual(
+            "Liverpool are playing well.",
+            normalize_translation_selection("  Liverpool\nare   playing well.  "),
+        )
+
+    def test_translation_accepts_numbers_and_punctuation(self):
+        self.assertEqual(
+            "Liverpool won 2 games!",
+            normalize_translation_selection("Liverpool won 2 games!"),
+        )
+
+    def test_translation_rejects_single_word_mixed_language_and_long_text(self):
+        for value in ("player", "hello world 世界", "hello world привет", "one " * 126):
+            with self.subTest(value=value[:20]):
+                with self.assertRaisesRegex(InvalidSelection, "英文句子"):
+                    normalize_translation_selection(value)
 
 
 if __name__ == "__main__":
