@@ -33,11 +33,11 @@ class InstallLayoutTests(unittest.TestCase):
     def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.5.0", manifest["version"])
+        self.assertEqual("1.6.0", manifest["version"])
         self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
         scripts = manifest["content_scripts"][0]
         self.assertEqual(
-            ["lib.js", "lookup-popover.js", "content.js"], scripts["js"]
+            ["lib.js", "lookup-details.js", "lookup-popover.js", "content.js"], scripts["js"]
         )
         resources = manifest["web_accessible_resources"][0]["resources"]
         self.assertIn("lookup-popover.css", resources)
@@ -57,9 +57,28 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertIn('id="create-section"', options)
         self.assertIn("有道文本翻译", options)
         self.assertIn('id="youdao-test-text"', options)
+        self.assertIn('id="dictionary-select"', options)
+        self.assertIn('id="dictionary-status"', options)
+        self.assertIn('id="manage-dictionaries"', options)
+        self.assertIn('id="refresh-dictionaries"', options)
         options_script = (ROOT / "extension" / "options.js").read_text(encoding="utf-8")
         self.assertIn('action: "test_youdao_translation"', options_script)
+        self.assertIn('action: "open_dictionary_manager"', options_script)
+        self.assertIn('activeDictionary: elements.dictionary.value', options_script)
+        self.assertIn('action: "select_dictionary"', options_script)
+        self.assertIn('elements.dictionary.addEventListener("change", selectDictionary)', options_script)
+        self.assertIn("ClipperUi.canForwardNativeAction", background)
         self.assertNotIn('action: "test_youdao_dictionary"', options_script)
+        viewer = (ROOT / "extension" / "viewer.html").read_text(encoding="utf-8")
+        self.assertIn('<script src="lookup-details.js"></script>', viewer)
+
+    def test_dictionary_catalog_and_visual_manager_are_packaged(self):
+        catalog = json.loads((ROOT / "dictionary-catalog.json").read_text(encoding="utf-8"))
+        self.assertEqual(["ecdict", "kaikki-en"], [pack["id"] for pack in catalog["packs"]])
+        self.assertTrue((ROOT / "dictionary-manager.ps1").is_file())
+        self.assertTrue((ROOT / "clipper" / "dictionary_manager_gui.py").is_file())
+        manager = (ROOT / "clipper" / "dictionary_manager_gui.py").read_text(encoding="utf-8")
+        self.assertIn('installation_lock("dictionary-manager-gui")', manager)
 
     def test_toolbar_popup_exposes_persistent_meaning_style_control(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
@@ -97,10 +116,17 @@ class InstallLayoutTests(unittest.TestCase):
     def test_install_and_uninstall_scripts_are_idempotent_by_design(self):
         install = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")
         uninstall = (ROOT / "uninstall.ps1").read_text(encoding="utf-8-sig")
+        ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
         self.assertRegex(install, re.compile(r"New-Item[^\n]+-Force"))
         self.assertRegex(install, re.compile(r"Copy-Item[^\n]+-Force"))
         self.assertIn("Remove-Item -ErrorAction SilentlyContinue", uninstall)
-        self.assertRegex(install, re.compile(r"EXPECTED_ECDICT_SHA256\s*=\s*'[0-9a-f]{64}'"))
+        self.assertIn("dictionary-catalog.json", install)
+        self.assertIn("dictionary-manager.ps1", install)
+        self.assertIn("data\\dictionaries", install)
+        self.assertNotIn("EXPECTED_ECDICT_SHA256", install)
+        self.assertNotRegex(install, re.compile(r"Copy-Item[^\n]+data\\ecdict\.sqlite3"))
+        self.assertIn("data/**/*.sqlite3", ignore)
+        self.assertIn("data/dictionaries/", ignore)
 
     def test_pdf_reader_and_pinned_pdfjs_runtime_are_packaged(self):
         vendor = ROOT / "extension" / "vendor" / "pdfjs"

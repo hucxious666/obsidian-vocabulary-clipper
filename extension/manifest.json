@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Obsidian 词汇采集器",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "选区查询英文释义或翻译，并将单词添加到 Obsidian 自定义章节或笔记末尾。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwV+NndqV7w2oEc1TjEMplPWlmJndbtlAYAgweDEOEHfwg1RstzbJoFDAvOiNr9Q4GY0qgilKIPe2FuYYUmqRue7BzgwdXuErE2VkeaLsM6NZg5RxKfU7tjOtt3t5U6pZTyKUzzO+NHIanlzSsxdpn2vLC+m6E3fDy/w4atjsO4WSK1BEmTDXZSbwILLCXmKHFHPLhGi86ndxh2qRNeU/s1L5tqiuuFSRTdPv2PcLISN025TRuS2EP1KWOJW0meBlGWgGfsXA+7kV+eD6cmP8Qs2Z2wJUnt+ifBKIod5UK5JyzkW/UkbgcP7QsEXkihv10tj681c9VcyX92Rs83qZHQIDAQAB",
   "permissions": ["contextMenus", "nativeMessaging", "notifications", "storage"],
@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*", "file:///*"],
-      "js": ["lib.js", "lookup-popover.js", "content.js"],
+      "js": ["lib.js", "lookup-details.js", "lookup-popover.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

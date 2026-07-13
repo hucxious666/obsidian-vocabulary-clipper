@@ -7,6 +7,8 @@ const DEFAULTS = {
   youdaoCredentialsConfigured: false,
   doubleClickLookupEnabled: true,
   autoOpenPdfEnabled: true,
+  activeDictionary: "ecdict",
+  dictionaries: [],
 };
 
 const elements = {
@@ -25,6 +27,8 @@ const elements = {
   message: document.querySelector("#message"),
   doubleClickLookup: document.querySelector("#double-click-lookup"),
   autoOpenPdf: document.querySelector("#auto-open-pdf"),
+  dictionary: document.querySelector("#dictionary-select"),
+  dictionaryStatus: document.querySelector("#dictionary-status"),
 };
 
 function callNative(payload) {
@@ -47,12 +51,29 @@ function populateSections(sections, selected) {
   }
 }
 
+function populateDictionaries(dictionaries, selected) {
+  elements.dictionary.replaceChildren();
+  for (const dictionary of dictionaries || []) {
+    const option = document.createElement("option");
+    option.value = dictionary.id;
+    option.textContent = dictionary.installed ? dictionary.name : `${dictionary.name}（未安装）`;
+    option.disabled = !dictionary.installed;
+    option.selected = dictionary.id === selected;
+    elements.dictionary.append(option);
+  }
+  const active = (dictionaries || []).find((item) => item.id === selected);
+  const ready = Boolean(active && active.installed);
+  elements.dictionaryStatus.textContent = ready ? "已安装" : "未安装";
+  elements.dictionaryStatus.classList.toggle("ready", ready);
+}
+
 function applySettings(settings) {
   const raw = { ...DEFAULTS, ...(settings || {}) };
   const value = { ...raw, ...ClipperUi.normalizeSettings(raw) };
   elements.sectionFile.value = value.sectionFile;
   elements.appendFile.value = value.appendFile;
   populateSections(value.sections, value.selectedSection);
+  populateDictionaries(value.dictionaries, value.activeDictionary);
   elements.credentialStatus.textContent = value.credentialsConfigured ? "已安全配置" : "未配置";
   elements.credentialStatus.classList.toggle("ready", value.credentialsConfigured);
   elements.youdaoCredentialStatus.textContent = value.youdaoCredentialsConfigured
@@ -104,6 +125,7 @@ async function save() {
     secretKey: elements.secretKey.value,
     youdaoAppKey: elements.youdaoAppKey.value,
     youdaoSecretKey: elements.youdaoSecretKey.value,
+    activeDictionary: elements.dictionary.value,
   });
   if (!response || !response.ok) return showMessage((response && response.message) || "保存失败", true);
   elements.appId.value = "";
@@ -150,6 +172,37 @@ async function testConnection() {
   showMessage((response && response.message) || "测试失败", !response || !response.ok);
 }
 
+async function refreshDictionaries() {
+  const response = await callNative({ action: "get_settings" });
+  if (!response || !response.ok) return showMessage((response && response.message) || "刷新失败", true);
+  applySettings(response);
+  showMessage("词典安装状态已刷新。");
+}
+
+async function selectDictionary() {
+  const selected = elements.dictionary.value;
+  elements.dictionary.disabled = true;
+  showMessage("正在切换词典…");
+  const response = await callNative({
+    action: "select_dictionary",
+    dictionaryId: selected,
+  });
+  elements.dictionary.disabled = false;
+  if (!response || !response.ok) {
+    const latest = await callNative({ action: "get_settings" });
+    if (latest && latest.ok) applySettings(latest);
+    return showMessage((response && response.message) || "切换词典失败", true);
+  }
+  applySettings(response);
+  const active = response.dictionaries.find((item) => item.id === response.activeDictionary);
+  showMessage(`当前词典已切换为 ${active ? active.name : response.activeDictionary}。`);
+}
+
+async function manageDictionaries() {
+  const response = await callNative({ action: "open_dictionary_manager" });
+  showMessage((response && response.message) || "无法打开词典下载器", !response || !response.ok);
+}
+
 document.querySelectorAll("[data-browse]").forEach((button) => {
   button.addEventListener("click", () => browse(button.dataset.browse));
 });
@@ -157,6 +210,9 @@ document.querySelector("#save").addEventListener("click", save);
 document.querySelector("#create-section").addEventListener("click", createSection);
 document.querySelector("#test").addEventListener("click", testConnection);
 document.querySelector("#test-youdao").addEventListener("click", testYoudaoTranslation);
+document.querySelector("#refresh-dictionaries").addEventListener("click", refreshDictionaries);
+document.querySelector("#manage-dictionaries").addEventListener("click", manageDictionaries);
+elements.dictionary.addEventListener("change", selectDictionary);
 elements.doubleClickLookup.addEventListener("change", saveBrowserPreferences);
 elements.autoOpenPdf.addEventListener("change", saveBrowserPreferences);
 load();

@@ -122,8 +122,11 @@
         status,
         ClipperUi.normalizeSettings(cached),
       );
-      const source = this.element("div", "lookup-source", definition.source === "baidu" ? "来源：百度翻译" : "来源：ECDICT");
-      this.card.append(header, groups, source, status, sectionPanel);
+      const details = LookupDetails.render(definition);
+      const source = this.element(
+        "div", "lookup-source", `来源：${ClipperUi.dictionarySourceLabel(definition)}`,
+      );
+      this.card.append(header, groups, ...details, source, status, sectionPanel);
       this.open();
     }
 

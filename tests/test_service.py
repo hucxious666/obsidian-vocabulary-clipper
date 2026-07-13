@@ -45,6 +45,34 @@ class FakeYoudao:
         return "有道翻译结果"
 
 
+class FakeDictionaryRepository:
+    def __init__(self):
+        self.lookups = []
+        self.installed = {"ecdict", "kaikki-en"}
+
+    def list_packs(self):
+        return [
+            {"id": "ecdict", "name": "ECDICT 完整字段版", "installed": True},
+            {"id": "kaikki-en", "name": "Kaikki English", "installed": "kaikki-en" in self.installed},
+        ]
+
+    def require_installed(self, pack_id):
+        if pack_id not in self.installed:
+            raise LookupNotFound("离线词典尚未安装")
+        return Path(f"{pack_id}.sqlite3")
+
+    def lookup(self, pack_id, word):
+        self.require_installed(pack_id)
+        self.lookups.append((pack_id, word))
+        entry = FakeDictionary().lookup(word)
+        if pack_id == "kaikki-en":
+            return DictionaryEntry(
+                entry.matched_word, entry.phonetic, "", definition="a repeated event",
+                source_id="kaikki-en", source_name="Kaikki English",
+            )
+        return entry
+
+
 class ClipperServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -67,6 +95,8 @@ class ClipperServiceTests(unittest.TestCase):
         )
         FakeTranslator.calls = []
         FakeYoudao.calls = []
+        self.repository = FakeDictionaryRepository()
+        self.manager_opened = []
         self.service = ClipperService(
             self.store,
             root / "dict.db",
@@ -75,6 +105,8 @@ class ClipperServiceTests(unittest.TestCase):
             translator_factory=lambda _id, _key: FakeTranslator(),
             youdao_factory=lambda _id, _key: FakeYoudao(),
             file_picker=lambda _initial: str(self.news),
+            dictionary_repository=self.repository,
+            dictionary_manager_launcher=lambda: self.manager_opened.append(True),
         )
 
     def tearDown(self):
@@ -87,6 +119,58 @@ class ClipperServiceTests(unittest.TestCase):
         self.assertIn("1. word /wɜːd/", self.chapter.read_text(encoding="utf-8"))
         self.assertIn("n.单词；词语", self.chapter.read_text(encoding="utf-8"))
         self.assertEqual([], FakeTranslator.calls)
+
+    def test_settings_expose_dictionary_status_and_selected_pack(self):
+        response = self.service.handle({"action": "get_settings"})
+
+        self.assertEqual("ecdict", response["activeDictionary"])
+        self.assertEqual("Kaikki English", response["dictionaries"][1]["name"])
+        self.assertTrue(response["dictionaries"][1]["installed"])
+
+    def test_save_settings_switches_lookup_to_installed_dictionary(self):
+        response = self.service.handle({
+            "action": "save_settings",
+            "sectionFile": str(self.chapter),
+            "appendFile": str(self.news),
+            "selectedSection": "Chapter 22",
+            "activeDictionary": "kaikki-en",
+        })
+        lookup = self.service.handle({"action": "lookup_definition", "text": "repeat"})
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("kaikki-en", self.store.load().dictionary_id)
+        self.assertEqual(("kaikki-en", "repeat"), self.repository.lookups[-1])
+        self.assertEqual("Kaikki English", lookup["definition"]["sourceName"])
+        self.assertEqual("a repeated event", lookup["definition"]["groups"][0]["definitions"][0])
+
+    def test_select_dictionary_persists_without_opening_manager(self):
+        response = self.service.handle({
+            "action": "select_dictionary",
+            "dictionaryId": "kaikki-en",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("selected", response["status"])
+        self.assertEqual("kaikki-en", response["activeDictionary"])
+        self.assertEqual("kaikki-en", self.store.load().dictionary_id)
+        self.assertEqual([], self.manager_opened)
+
+    def test_save_settings_rejects_uninstalled_dictionary(self):
+        self.repository.installed.remove("kaikki-en")
+        response = self.service.handle({
+            "action": "save_settings",
+            "sectionFile": str(self.chapter),
+            "appendFile": str(self.news),
+            "selectedSection": "Chapter 22",
+            "activeDictionary": "kaikki-en",
+        })
+        self.assertEqual("lookup_failed", response["status"])
+        self.assertEqual("ecdict", self.store.load().dictionary_id)
+
+    def test_opens_visual_dictionary_manager(self):
+        response = self.service.handle({"action": "open_dictionary_manager"})
+        self.assertTrue(response["ok"])
+        self.assertEqual([True], self.manager_opened)
 
     def test_add_entry_can_target_named_section(self):
         response = self.service.handle(
@@ -234,9 +318,14 @@ class ClipperServiceTests(unittest.TestCase):
                 "word": "word",
                 "phonetic": "wɜːd",
                 "source": "ecdict",
+                "sourceId": "ecdict",
+                "sourceName": "ECDICT",
                 "groups": [
                     {"partOfSpeech": "n.", "definitions": ["单词", "词语"]}
                 ],
+                "englishGroups": [],
+                "examples": [],
+                "metadata": {},
             },
             response["definition"],
         )

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "ecdict",
+      "name": "ECDICT 完整字段版",
+      "filename": "ecdict.sqlite3",
+      "sourceLanguage": "en",
+      "targetLanguage": "zh-Hans",
+      "builder": "ecdict_csv",
+      "url": "https://api.github.com/repos/skywind3000/ECDICT/contents/ecdict.csv?ref=bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b",
+      "requestHeaders": {
+        "Accept": "application/vnd.github.raw+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      },
+      "sha256": "1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf",
+      "downloadBytes": 65933428,
+      "maxDownloadBytes": 70000000,
+      "homepage": "https://github.com/skywind3000/ECDICT",
+      "license": "MIT"
+    },
+    {
+      "id": "kaikki-en",
+      "name": "Kaikki English",
+      "filename": "kaikki-en.sqlite3",
+      "sourceLanguage": "en",
+      "targetLanguage": "en",
+      "builder": "kaikki_jsonl_gzip",
+      "url": "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl.gz",
+      "downloadBytes": 497894576,
+      "maxDownloadBytes": 700000000,
+      "homepage": "https://kaikki.org/dictionary/English/",
+      "license": "Wiktionary reuse terms",
+      "note": "实验性：官方按语言后处理包已标记为未来弃用"
+    }
+  ]
+}

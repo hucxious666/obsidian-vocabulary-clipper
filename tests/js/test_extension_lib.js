@@ -44,7 +44,41 @@ assert.deepStrictEqual(ui.normalizeSettings({
   appendFile: "news.md",
   selectedSection: "Chapter 22",
   sections: ["Chapter 21", "Chapter 22"],
+  activeDictionary: "ecdict",
+  dictionaries: [],
 });
+
+assert.deepStrictEqual(ui.normalizeSettings({
+  selectedSection: "阅读",
+  activeDictionary: "kaikki-en",
+  dictionaries: [
+    { id: "ecdict", name: "ECDICT", installed: true },
+    { id: "kaikki-en", name: "Kaikki English", installed: false },
+  ],
+}), {
+  sectionFile: "",
+  appendFile: "",
+  selectedSection: "阅读",
+  sections: [],
+  activeDictionary: "kaikki-en",
+  dictionaries: [
+    { id: "ecdict", name: "ECDICT", installed: true },
+    { id: "kaikki-en", name: "Kaikki English", installed: false },
+  ],
+});
+assert.strictEqual(ui.dictionarySourceLabel({ sourceName: "Kaikki English" }), "Kaikki English");
+assert.strictEqual(ui.dictionarySourceLabel({ source: "baidu" }), "百度翻译");
+assert.strictEqual(ui.dictionarySourceLabel({ sourceId: "ecdict" }), "ECDICT");
+const optionsUrl = "chrome-extension://extension-id/options.html";
+assert.strictEqual(ui.canForwardNativeAction(
+  "open_dictionary_manager", optionsUrl, optionsUrl,
+), true);
+assert.strictEqual(ui.canForwardNativeAction(
+  "open_dictionary_manager", "https://example.com/article", optionsUrl,
+), false);
+assert.strictEqual(ui.canForwardNativeAction(
+  "lookup_definition", "https://example.com/article", optionsUrl,
+), true);
 
 assert.strictEqual(ui.notificationFor({ ok: true, status: "added" }), null);
 assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "duplicate", message: "已存在" }), {

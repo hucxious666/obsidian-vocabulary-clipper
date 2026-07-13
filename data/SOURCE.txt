@@ -1,6 +1,22 @@
-ECDICT source: https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv
-Source size: 65933428 bytes
-Source SHA-256: 1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf
-SQLite entries: 770611
-SQLite lemma mappings: 59697
+Offline dictionary databases are not distributed through this Git repository.
 
+The downloadable pack catalog is ../dictionary-catalog.json.
+
+ECDICT
+- Source commit: bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b
+- Source URL: https://api.github.com/repos/skywind3000/ECDICT/contents/ecdict.csv?ref=bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b
+- Download media type: application/vnd.github.raw+json
+- Source size: 65933428 bytes
+- Source SHA-256: 1a6947e04785db63613a92e14903cdae7954f7e84860b10e68e5c7cbb3f9c3cf
+- The local builder preserves all source fields in the unified SQLite pack.
+
+Kaikki English
+- Source URL: https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl.gz
+- Rolling Wiktextract source; download size changes as Wiktionary is updated.
+- Experimental source: upstream marks this postprocessed per-language download for future deprecation.
+- Observed size on 2026-07-13: 497894576 bytes.
+- The installer records the actual SHA-256, ETag and Last-Modified values in the pack.
+
+Generated location
+- Installed application: %LOCALAPPDATA%\ObsidianVocabularyClipper\app\data\dictionaries
+- Repository development run: data\dictionaries

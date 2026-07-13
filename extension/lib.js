@@ -12,12 +12,31 @@
     const sections = Array.isArray(value.sections)
       ? value.sections.map(String)
       : (value.chapters || []).map((chapter) => `Chapter ${chapter}`);
+    const dictionaries = Array.isArray(value.dictionaries)
+      ? value.dictionaries.map((dictionary) => ({
+        id: String(dictionary.id || ""),
+        name: String(dictionary.name || dictionary.id || "离线词典"),
+        installed: Boolean(dictionary.installed),
+      }))
+      : [];
     return {
       sectionFile: value.sectionFile || value.chapterFile || "",
       appendFile: value.appendFile || value.newsFile || "",
       selectedSection,
       sections,
+      activeDictionary: String(value.activeDictionary || value.dictionaryId || "ecdict"),
+      dictionaries,
     };
+  }
+
+  function dictionarySourceLabel(definition) {
+    const value = definition || {};
+    if (value.sourceName) return String(value.sourceName);
+    const source = value.sourceId || value.source;
+    if (source === "baidu") return "百度翻译";
+    if (source === "kaikki-en") return "Kaikki English";
+    if (source === "ecdict") return "ECDICT";
+    return "离线词典";
   }
 
   function normalizeMeaningStyle(value) {
@@ -47,6 +66,10 @@
     return writeActions.has(payload && payload.action)
       ? { ...payload, meaningStyle: normalizeMeaningStyle(value) }
       : payload;
+  }
+
+  function canForwardNativeAction(action, senderUrl, optionsUrl) {
+    return action !== "open_dictionary_manager" || senderUrl === optionsUrl;
   }
 
   function menuTitles(settings, meaningStyle = "covered") {
@@ -238,10 +261,12 @@
 
   return {
     addPdfBypass,
+    canForwardNativeAction,
     classifySelection,
     createMeaningBadgeController,
     createSelectionDispatcher,
     createNativeClient,
+    dictionarySourceLabel,
     formatTranslationPreview,
     hasPdfBypass,
     isSafePdfSource,

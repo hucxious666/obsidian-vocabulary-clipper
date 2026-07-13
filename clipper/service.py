@@ -6,6 +6,7 @@ from typing import Callable
 
 from .config import AppConfig, ConfigStore, SettingsValidationError
 from .dictionary import DictionaryLookup, LookupNotFound
+from .dictionary_presenter import definition_payload, markdown_meaning
 from .entry import added_response, normalize_meaning_style
 from .markdown_writer import (
     ConcurrentWriteError,
@@ -17,9 +18,9 @@ from .markdown_writer import (
     restore_bytes_atomic,
     write_entry_atomic,
 )
-from .meaning import normalize_ecdict_translation, parse_definition_groups
-from .selection import InvalidSelection, normalize_selection, normalize_translation_selection
+from .selection import InvalidSelection, normalize_selection
 from .translator import BaiduTranslateError, BaiduTranslator
+from .translation_service import preview_youdao, translate_selection
 from .youdao import YoudaoTranslateError, YoudaoTranslator
 
 
@@ -34,8 +35,8 @@ class ClipperService:
         "translate_selection",
         "add_entry",
         "select_section",
-        "create_section",
-        "create_section_and_add_entry",
+        "create_section", "create_section_and_add_entry",
+        "open_dictionary_manager", "select_dictionary",
     }
 
     def __init__(
@@ -47,6 +48,8 @@ class ClipperService:
         translator_factory: Callable = BaiduTranslator,
         youdao_factory: Callable = YoudaoTranslator,
         file_picker: Callable[[str], str] | None = None,
+        dictionary_repository=None,
+        dictionary_manager_launcher: Callable[[], None] | None = None,
     ):
         self.config_store = config_store
         self.dictionary_path = Path(dictionary_path)
@@ -55,6 +58,8 @@ class ClipperService:
         self.translator_factory = translator_factory
         self.youdao_factory = youdao_factory
         self.file_picker = file_picker
+        self.dictionary_repository = dictionary_repository
+        self.dictionary_manager_launcher = dictionary_manager_launcher
 
     def handle(self, message: dict) -> dict:
         if not isinstance(message, dict) or message.get("action") not in self.ACTIONS:
@@ -62,7 +67,11 @@ class ClipperService:
         try:
             action = message["action"]
             if action == "get_settings":
-                return {"ok": True, "status": "ok", **self.config_store.public_settings()}
+                return {"ok": True, "status": "ok", **self._public_settings()}
+            if action == "open_dictionary_manager":
+                return self._open_dictionary_manager()
+            if action == "select_dictionary":
+                return self._select_dictionary(message)
             if action == "browse_file":
                 return self._browse_file(message)
             if action == "save_settings":
@@ -133,86 +142,45 @@ class ClipperService:
             secret_key=secret_key,
             youdao_app_key=youdao_app_key,
             youdao_secret_key=youdao_secret_key,
+            dictionary_id=str(
+                message.get("activeDictionary")
+                or message.get("dictionaryId")
+                or (existing.dictionary_id if existing else "ecdict")
+            ),
         )
+        if self.dictionary_repository:
+            self.dictionary_repository.require_installed(config.dictionary_id)
         self.config_store.save(config)
-        return {"ok": True, "status": "saved", **self.config_store.public_settings()}
+        return {"ok": True, "status": "saved", **self._public_settings()}
 
     def _test_connection(self) -> dict:
         config = self.config_store.load()
-        if not self.dictionary_path.is_file():
-            return self._error("lookup_failed", "离线词典尚未安装")
+        self._require_dictionary(config.dictionary_id)
         self.translator_factory(config.app_id, config.secret_key).translate("test")
         return {"ok": True, "status": "ok", "message": "词典、百度翻译和文件配置可用"}
 
     def _test_youdao_translation(self, message: dict) -> dict:
-        text = normalize_translation_selection(str(message.get("text") or ""))
-        config = self.config_store.load()
-        if not config.youdao_app_key or not config.youdao_secret_key:
-            return self._error("invalid", "请先保存有道 App Key 和 App Secret")
-        translated = self.youdao_factory(
-            config.youdao_app_key, config.youdao_secret_key
-        ).translate(text)
-        return {
-            "ok": True,
-            "status": "ok",
-            "message": "有道文本翻译成功（结果仅预览，不会写入）",
-            "preview": {
-                "sourceText": text,
-                "translatedText": translated,
-                "source": "youdao",
-            },
-        }
+        return preview_youdao(
+            str(message.get("text") or ""), self.config_store.load(), self.youdao_factory)
 
     def _lookup_definition(self, message: dict) -> dict:
         word = normalize_selection(str(message.get("text") or ""))
-        entry = self.dictionary_factory(self.dictionary_path).lookup(word)
-        groups = parse_definition_groups(entry.translation)
-        source = "ecdict"
-        if not groups:
+        entry = self._lookup_entry(self.config_store.load(), word)
+        payload = definition_payload(entry)
+        if not payload["groups"]:
             config = self.config_store.load()
             translation = self.translator_factory(config.app_id, config.secret_key).translate(word)
-            groups = [{"partOfSpeech": "释义", "definitions": [translation]}]
-            source = "baidu"
-        return {
-            "ok": True,
-            "status": "ok",
-            "definition": {
-                "word": word,
-                "phonetic": entry.phonetic,
-                "source": source,
-                "groups": groups,
-            },
-        }
+            payload.update({
+                "source": "baidu", "sourceId": "baidu", "sourceName": "百度翻译",
+                "groups": [{"partOfSpeech": "释义", "definitions": [translation]}],
+            })
+        return {"ok": True, "status": "ok", "definition": payload}
 
     def _translate_selection(self, message: dict) -> dict:
-        text = normalize_translation_selection(str(message.get("text") or ""))
-        config = self.config_store.load()
-        source = "baidu"
-        try:
-            translated = self.translator_factory(config.app_id, config.secret_key).translate(text)
-        except BaiduTranslateError as baidu_error:
-            if not config.youdao_app_key or not config.youdao_secret_key:
-                raise BaiduTranslateError(
-                    f"{baidu_error}；未配置有道翻译后备"
-                ) from baidu_error
-            try:
-                translated = self.youdao_factory(
-                    config.youdao_app_key, config.youdao_secret_key
-                ).translate(text)
-            except YoudaoTranslateError as youdao_error:
-                raise YoudaoTranslateError(
-                    f"百度和有道翻译均失败：{baidu_error}；{youdao_error}"
-                ) from youdao_error
-            source = "youdao"
-        return {
-            "ok": True,
-            "status": "ok",
-            "translation": {
-                "sourceText": text,
-                "translatedText": translated,
-                "source": source,
-            },
-        }
+        return translate_selection(
+            str(message.get("text") or ""), self.config_store.load(),
+            self.translator_factory, self.youdao_factory,
+        )
 
     def _add_entry(self, message: dict) -> dict:
         target = {"chapter": "section", "news": "append"}.get(
@@ -227,8 +195,8 @@ class ClipperService:
             path = Path(config.section_file if target == "section" else config.append_file)
             section = str(message.get("sectionName") or config.selected_section) if target == "section" else None
             ensure_not_duplicate(path, target, section, word)
-            dictionary_entry = self.dictionary_factory(self.dictionary_path).lookup(word)
-            meaning = normalize_ecdict_translation(dictionary_entry.translation)
+            dictionary_entry = self._lookup_entry(config, word)
+            meaning = markdown_meaning(dictionary_entry)
             if not meaning:
                 meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
             result = write_entry_atomic(
@@ -268,8 +236,8 @@ class ClipperService:
         meaning_style = normalize_meaning_style(message.get("meaningStyle"))
         if add_entry:
             word = normalize_selection(str(message.get("text") or ""))
-            dictionary_entry = self.dictionary_factory(self.dictionary_path).lookup(word)
-            meaning = normalize_ecdict_translation(dictionary_entry.translation)
+            dictionary_entry = self._lookup_entry(config, word)
+            meaning = markdown_meaning(dictionary_entry)
             if not meaning:
                 meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
             entry = (word, dictionary_entry.phonetic, meaning, meaning_style)
@@ -284,7 +252,43 @@ class ClipperService:
             if add_entry
             else {"ok": True, "status": "created", "message": f"已创建 {name}"}
         )
-        return {**response, **self.config_store.public_settings()}
+        return {**response, **self._public_settings()}
+
+    def _lookup_entry(self, config: AppConfig, word: str):
+        if self.dictionary_repository:
+            return self.dictionary_repository.lookup(config.dictionary_id, word)
+        return self.dictionary_factory(self.dictionary_path).lookup(word)
+
+    def _require_dictionary(self, dictionary_id: str) -> None:
+        if self.dictionary_repository:
+            self.dictionary_repository.require_installed(dictionary_id)
+        elif not self.dictionary_path.is_file():
+            raise LookupNotFound("离线词典尚未安装")
+
+    def _select_dictionary(self, message: dict) -> dict:
+        config = self.config_store.load()
+        dictionary_id = str(message.get("dictionaryId") or message.get("activeDictionary") or "")
+        if not self.dictionary_repository and dictionary_id != "ecdict":
+            raise LookupNotFound("未知的离线词典")
+        self._require_dictionary(dictionary_id)
+        self.config_store.save(replace(config, dictionary_id=dictionary_id))
+        return {"ok": True, "status": "selected", **self._public_settings()}
+
+    def _public_settings(self) -> dict:
+        settings = self.config_store.public_settings()
+        if self.dictionary_repository:
+            settings["dictionaries"] = self.dictionary_repository.list_packs()
+        else:
+            settings["dictionaries"] = [
+                {"id": "ecdict", "name": "ECDICT", "installed": self.dictionary_path.is_file()}
+            ]
+        return settings
+
+    def _open_dictionary_manager(self) -> dict:
+        if self.dictionary_manager_launcher is None:
+            return self._error("invalid", "词典下载器不可用")
+        self.dictionary_manager_launcher()
+        return {"ok": True, "status": "opened", "message": "已打开离线词典下载器"}
 
     def _read_sections(self, path: Path) -> list[str]:
         data = path.read_bytes()

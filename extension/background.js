@@ -92,10 +92,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (!message || message.kind !== "native" || typeof message.payload !== "object") return false;
+  const optionsUrl = chrome.runtime.getURL("options.html");
+  if (!ClipperUi.canForwardNativeAction(message.payload.action, sender.url || "", optionsUrl)) {
+    sendResponse({ ok: false, status: "invalid", message: "词典下载器只能从扩展设置页打开" });
+    return false;
+  }
   sendNative(message.payload).then((response) => {
     sendResponse(response);
     const settingsActions = new Set([
-      "save_settings", "select_section", "create_section", "create_section_and_add_entry",
+      "save_settings", "select_dictionary", "select_section",
+      "create_section", "create_section_and_add_entry",
     ]);
     if (response && response.ok && settingsActions.has(message.payload.action)) void syncMenus();
     if (["add_entry", "create_section_and_add_entry"].includes(message.payload.action)) {

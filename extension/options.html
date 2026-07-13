@@ -29,6 +29,18 @@
     </section>
 
     <section>
+      <div class="section-title"><h2>离线词典</h2><span id="dictionary-status" class="status">未安装</span></div>
+      <p class="hint">词典保存在本机。ECDICT 提供英汉释义；Kaikki English 提供英文分义项和例句。</p>
+      <label for="dictionary-select">当前词典</label>
+      <select id="dictionary-select"></select>
+      <div class="dictionary-actions">
+        <button id="refresh-dictionaries" type="button">刷新状态</button>
+        <button id="manage-dictionaries" type="button" class="secondary">管理离线词典…</button>
+      </div>
+      <p class="hint">Kaikki English 官方压缩源约 498 MB，首次构建 SQLite 需要一些时间。</p>
+    </section>
+
+    <section>
       <h2>浏览体验</h2>
       <label class="check-row" for="double-click-lookup">
         <input id="double-click-lookup" type="checkbox">

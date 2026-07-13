@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -26,6 +27,7 @@ class AppConfig:
     secret_key: str
     youdao_app_key: str = ""
     youdao_secret_key: str = ""
+    dictionary_id: str = "ecdict"
 
     def __post_init__(self) -> None:
         selected = (
@@ -34,6 +36,10 @@ class AppConfig:
             else normalize_section_name(self.selected_section)
         )
         object.__setattr__(self, "selected_section", selected)
+        dictionary_id = str(self.dictionary_id or "ecdict").strip()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,49}", dictionary_id):
+            raise ValueError("词典标识无效")
+        object.__setattr__(self, "dictionary_id", dictionary_id)
 
     @property
     def chapter_file(self) -> str:
@@ -93,6 +99,7 @@ class ConfigStore:
             "section_file": str(section_file),
             "append_file": str(append_file),
             "selected_section": selected,
+            "dictionary_id": config.dictionary_id,
             "credentials": {
                 "id": self.protector.protect(config.app_id.strip()),
                 "key": self.protector.protect(config.secret_key.strip()),
@@ -129,6 +136,7 @@ class ConfigStore:
             secret_key=self.protector.unprotect(credentials.get("key", "")),
             youdao_app_key=self._unprotect_optional(youdao_credentials.get("id", "")),
             youdao_secret_key=self._unprotect_optional(youdao_credentials.get("key", "")),
+            dictionary_id=str(payload.get("dictionary_id") or "ecdict"),
         )
 
     def public_settings(self) -> dict:
@@ -148,6 +156,7 @@ class ConfigStore:
             "youdaoCredentialsConfigured": bool(
                 config.youdao_app_key and config.youdao_secret_key
             ),
+            "activeDictionary": config.dictionary_id,
         }
 
     def _unprotect_optional(self, value: str) -> str:
