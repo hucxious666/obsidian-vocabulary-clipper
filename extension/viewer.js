@@ -18,6 +18,9 @@ let pdfDocument = null;
 let pdfViewer = null;
 let pdfjsLib = null;
 let viewerLibrary = null;
+let lastSelectionPoint = { clientX: 0, clientY: 0 };
+let lastSelectionAction = { at: 0, key: "" };
+const selectionDispatcher = ClipperUi.createSelectionDispatcher(handleSelectionAction);
 
 function showStatus(message, error = false) {
   elements.status.textContent = message;
@@ -32,13 +35,44 @@ function selectionAnchor(selection, event) {
   return { left: event.clientX, right: event.clientX, top: event.clientY, bottom: event.clientY };
 }
 
+function handleSelectionAction(action, selection, point) {
+  const now = Date.now();
+  const key = `${action.mode}:${action.text}`;
+  if (lastSelectionAction.key === key && now - lastSelectionAction.at < 800) return;
+  lastSelectionAction = { at: now, key };
+  const anchor = selectionAnchor(selection, point);
+  if (action.mode === "translation") popover.translate(action.text, anchor);
+  else popover.lookup(action.text, anchor);
+}
+
+function queueSelection(point, delay = 0) {
+  selectionDispatcher.schedule(() => window.getSelection(), point, delay);
+}
+
 function bindLookup() {
+  window.addEventListener("mousedown", (event) => {
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
+    lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
+  }, true);
+  document.addEventListener("selectionchange", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
+    queueSelection(lastSelectionPoint, 200);
+  }, true);
+  window.addEventListener("mouseup", (event) => {
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
+    lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
+    queueSelection(lastSelectionPoint);
+  }, true);
   document.addEventListener("dblclick", (event) => {
-    const point = { clientX: event.clientX, clientY: event.clientY };
-    ClipperUi.scheduleLookupFromSelection(
-      () => window.getSelection(),
-      (word, selection) => popover.lookup(word, selectionAnchor(selection, point)),
-    );
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
+    lastSelectionPoint = { clientX: event.clientX, clientY: event.clientY };
+    queueSelection(lastSelectionPoint);
   }, true);
 }
 
@@ -113,7 +147,7 @@ async function loadPdf() {
     elements.pageNumber.max = String(pdfDocument.numPages);
     linkService.setDocument(pdfDocument, null);
     pdfViewer.setDocument(pdfDocument);
-    showStatus("双击英文单词可查看释义");
+    showStatus("选中英文单词查看释义，选中英文句子进行翻译");
   } catch (error) {
     showStatus(`PDF 加载失败：${error && error.message ? error.message : "未知错误"}`, true);
   }

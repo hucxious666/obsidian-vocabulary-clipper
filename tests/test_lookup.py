@@ -5,7 +5,7 @@ from pathlib import Path
 
 from clipper.dictionary import DictionaryLookup, LookupNotFound
 from clipper.translator import BaiduTranslateError, BaiduTranslator
-from clipper.youdao import YoudaoDictionaryClient, YoudaoDictionaryError
+from clipper.youdao import YoudaoTranslateError, YoudaoTranslator
 
 
 class DictionaryLookupTests(unittest.TestCase):
@@ -80,66 +80,52 @@ class BaiduTranslatorTests(unittest.TestCase):
         self.assertNotIn("secret", str(error.exception))
 
 
-class YoudaoDictionaryClientTests(unittest.TestCase):
-    def test_builds_v3_signature_and_parses_dictionary_result(self):
+class YoudaoTranslatorTests(unittest.TestCase):
+    def test_builds_v3_signature_and_parses_translation_result(self):
         requests = []
 
         def fake_request(url, payload, timeout):
             requests.append((url, payload, timeout))
             return {
                 "errorCode": "0",
-                "basic": {
-                    "us-phonetic": "ˌɪɡnəˈmɪniəs",
-                    "explains": ["adj. 可耻的", "adj. 不名誉的", "adj. 下流的"],
-                },
+                "query": "Liverpool are playing well.",
+                "translation": ["利物浦踢得很好。"],
             }
 
-        client = YoudaoDictionaryClient(
+        client = YoudaoTranslator(
             "app-key",
             "app-secret",
             requester=fake_request,
             salt_factory=lambda: "123",
             time_factory=lambda: 1_700_000_000,
         )
-        result = client.lookup("ignominious")
+        result = client.translate("Liverpool are playing well.")
 
-        self.assertEqual("ˌɪɡnəˈmɪniəs", result.phonetic)
-        self.assertEqual(["adj. 可耻的", "adj. 不名誉的", "adj. 下流的"], result.explains)
+        self.assertEqual("利物浦踢得很好。", result)
+        self.assertEqual("https://openapi.youdao.com/api", requests[0][0])
         payload = requests[0][1]
         self.assertEqual("v3", payload["signType"])
-        self.assertEqual("ec", payload["dicts"])
+        self.assertEqual("en", payload["from"])
+        self.assertEqual("zh-CHS", payload["to"])
         self.assertEqual(64, len(payload["sign"]))
         self.assertNotIn("app-secret", repr(requests))
 
-    def test_parses_official_nested_ec_dictionary_result(self):
+    def test_joins_multiple_translation_results(self):
         def fake_request(_url, _payload, _timeout):
-            return {
-                "errorCode": "0",
-                "result": [
-                    {
-                        "ec": {
-                            "basic": {
-                                "usPhonetic": "ˌɪɡnəˈmɪniəs",
-                                "explains": ["adj. 可耻的", "adj. 不名誉的"],
-                            }
-                        }
-                    }
-                ],
-            }
+            return {"errorCode": "0", "translation": ["第一句。", "第二句。"]}
 
-        result = YoudaoDictionaryClient(
+        result = YoudaoTranslator(
             "app-key", "app-secret", requester=fake_request
-        ).lookup("ignominious")
-        self.assertEqual("ˌɪɡnəˈmɪniəs", result.phonetic)
-        self.assertEqual(["adj. 可耻的", "adj. 不名誉的"], result.explains)
+        ).translate("First sentence. Second sentence.")
+        self.assertEqual("第一句。；第二句。", result)
 
     def test_service_permission_error_is_actionable_and_sanitized(self):
         def fake_request(_url, _payload, _timeout):
             return {"errorCode": "110"}
 
-        client = YoudaoDictionaryClient("app-key", "app-secret", requester=fake_request)
-        with self.assertRaisesRegex(YoudaoDictionaryError, "未开通有道词典服务") as error:
-            client.lookup("word")
+        client = YoudaoTranslator("app-key", "app-secret", requester=fake_request)
+        with self.assertRaisesRegex(YoudaoTranslateError, "有道文本翻译错误 110") as error:
+            client.translate("Liverpool are playing well.")
         self.assertNotIn("app-secret", str(error.exception))
 
 

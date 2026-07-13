@@ -3,9 +3,10 @@
 
   let preferences = { doubleClickLookupEnabled: true, autoOpenPdfEnabled: true };
   let lastPointer = { clientX: 0, clientY: 0 };
-  let lastLookup = { at: 0, word: "" };
+  let lastLookup = { at: 0, key: "" };
   const sendNative = (payload) => chrome.runtime.sendMessage({ kind: "native", payload });
   const popover = new LookupPopover(sendNative);
+  const selectionDispatcher = ClipperUi.createSelectionDispatcher(handleSelectionAction);
 
   function isTopLevelPdf() {
     if (window.top !== window) return false;
@@ -49,43 +50,48 @@
 
   function selectionAtPoint(point) {
     const selection = window.getSelection();
-    if (ClipperUi.normalizeLookupText(selection ? selection.toString() : "")) return selection;
+    if (ClipperUi.classifySelection(selection ? selection.toString() : "")) return selection;
     return { rangeCount: 0, toString: () => wordAtPoint(point) };
   }
 
-  function queueLookup(point, readSelection) {
-    ClipperUi.scheduleLookupFromSelection(
-      readSelection,
-      (word, selection) => {
-        const now = Date.now();
-        const selectedWord = ClipperUi.selectionWordForDisplay({
-          enabled: preferences.doubleClickLookupEnabled,
-          selectedText: word,
-        });
-        if (!selectedWord || (lastLookup.word === selectedWord && now - lastLookup.at < 800)) return;
-        lastLookup = { at: now, word: selectedWord };
-        popover.lookup(selectedWord, selectionAnchor(selection, point));
-      },
-      (callback) => requestAnimationFrame(callback),
-    );
+  function handleSelectionAction(action, selection, point) {
+    const now = Date.now();
+    const key = `${action.mode}:${action.text}`;
+    if (!preferences.doubleClickLookupEnabled || (lastLookup.key === key && now - lastLookup.at < 800)) return;
+    lastLookup = { at: now, key };
+    const anchor = selectionAnchor(selection, point);
+    if (action.mode === "translation") popover.translate(action.text, anchor);
+    else popover.lookup(action.text, anchor);
+  }
+
+  function queueLookup(point, readSelection, delay = 0) {
+    selectionDispatcher.schedule(readSelection, point, delay);
   }
 
   window.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     lastPointer = { clientX: event.clientX, clientY: event.clientY };
   }, true);
 
-  document.addEventListener("selectionchange", () => {
-    queueLookup(lastPointer, () => window.getSelection());
+  document.addEventListener("selectionchange", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
+    queueLookup(lastPointer, () => window.getSelection(), 200);
   }, true);
 
   window.addEventListener("mouseup", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     const point = { clientX: event.clientX, clientY: event.clientY };
     queueLookup(point, () => window.getSelection());
   }, true);
 
   window.addEventListener("dblclick", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
     const point = { clientX: event.clientX, clientY: event.clientY };
     queueLookup(point, () => selectionAtPoint(point));
   }, true);

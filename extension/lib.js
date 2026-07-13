@@ -5,14 +5,79 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  function menuTitles(settings) {
-    const chapter = Number(settings && settings.selectedChapter) || 22;
-    return { chapter: `加入 Chapter ${chapter}`, news: "加入 NEWS" };
+  function normalizeSettings(settings) {
+    const value = settings || {};
+    const selectedSection = value.selectedSection
+      || `Chapter ${Number(value.selectedChapter) || 22}`;
+    const sections = Array.isArray(value.sections)
+      ? value.sections.map(String)
+      : (value.chapters || []).map((chapter) => `Chapter ${chapter}`);
+    return {
+      sectionFile: value.sectionFile || value.chapterFile || "",
+      appendFile: value.appendFile || value.newsFile || "",
+      selectedSection,
+      sections,
+    };
+  }
+
+  function normalizeMeaningStyle(value) {
+    return value === "plain" ? "plain" : "covered";
+  }
+
+  function meaningStyleBadge(value) {
+    return normalizeMeaningStyle(value) === "plain" ? "明" : "";
+  }
+
+  function createMeaningBadgeController(options) {
+    const setTimer = options.setTimer || ((callback, delay) => setTimeout(callback, delay));
+    async function sync() {
+      await options.setBackground("#c05a16");
+      await options.setText(meaningStyleBadge(await options.readStyle()));
+    }
+    async function showSuccess() {
+      await options.setBackground("#16803a");
+      await options.setText("✓");
+      setTimer(() => sync(), 1600);
+    }
+    return { showSuccess, sync };
+  }
+
+  function withMeaningStyle(payload, value) {
+    const writeActions = new Set(["add_entry", "create_section_and_add_entry"]);
+    return writeActions.has(payload && payload.action)
+      ? { ...payload, meaningStyle: normalizeMeaningStyle(value) }
+      : payload;
+  }
+
+  function menuTitles(settings, meaningStyle = "covered") {
+    const value = normalizeSettings(settings);
+    const suffix = normalizeMeaningStyle(meaningStyle) === "plain" ? "（明文）" : "";
+    return {
+      section: `加入 ${value.selectedSection}${suffix}`,
+      append: `添加到笔记末尾${suffix}`,
+    };
   }
 
   function safeMessage(response) {
     const value = response && typeof response.message === "string" ? response.message : "操作失败";
     return value.slice(0, 200);
+  }
+
+  function eventOccursWithin(event, host) {
+    const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+    return path.includes(host) || host.contains(event && event.target);
+  }
+
+  function shouldDismissPopover(event, host, activeElement) {
+    if (event && event.type === "scroll" && activeElement && activeElement.tagName === "SELECT") {
+      return false;
+    }
+    return !eventOccursWithin(event, host);
+  }
+
+  function shouldHandleSelectionEvent(event, host, popoverOpen) {
+    if (event && event.type === "selectionchange") return !popoverOpen;
+    return !eventOccursWithin(event, host);
   }
 
   function notificationFor(response) {
@@ -28,15 +93,10 @@
     return { title: titles[status] || "词汇添加失败", message: safeMessage(response) };
   }
 
-  function formatYoudaoPreview(preview) {
-    if (!preview || typeof preview.word !== "string") return "";
-    const phonetic = typeof preview.phonetic === "string" && preview.phonetic
-      ? ` /${preview.phonetic.replace(/^\/+|\/+$/g, "")}/`
-      : "";
-    const explains = Array.isArray(preview.explains)
-      ? preview.explains.filter((item) => typeof item === "string" && item.trim())
-      : [];
-    return [`${preview.word}${phonetic}`, ...explains.map((item) => `• ${item.trim()}`)].join("\n");
+  function formatTranslationPreview(preview) {
+    if (!preview || typeof preview.sourceText !== "string") return "";
+    const source = preview.source === "youdao" ? "有道翻译" : "百度翻译";
+    return `${preview.sourceText}\n→ ${preview.translatedText || ""}\n来源：${source}`;
   }
 
   function normalizeLookupText(value) {
@@ -45,8 +105,23 @@
     return /^[A-Za-z]+(?:['’-][A-Za-z]+)*$/.test(text) && text.length <= 120 ? text : "";
   }
 
-  function isSecondLeftMouseUp(event) {
-    return Boolean(event && event.button === 0 && event.detail === 2);
+  function normalizeTranslationText(value) {
+    const text = String(value || "").normalize("NFC").trim().replace(/\s+/g, " ");
+    const hasNonEnglishLetter = Array.from(text).some(
+      (character) => /\p{L}/u.test(character) && !/[A-Za-z]/.test(character),
+    );
+    if (!text || text.length > 500 || hasNonEnglishLetter) {
+      return "";
+    }
+    const words = text.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) || [];
+    return words.length >= 2 ? text : "";
+  }
+
+  function classifySelection(value) {
+    const definition = normalizeLookupText(value);
+    if (definition) return { mode: "definition", text: definition };
+    const translation = normalizeTranslationText(value);
+    return translation ? { mode: "translation", text: translation } : null;
   }
 
   function wordAtOffset(value, offset) {
@@ -62,18 +137,21 @@
     return normalizeLookupText(text.slice(start, end));
   }
 
-  function selectionWordForDisplay(state) {
-    if (!state || !state.enabled) return "";
-    return normalizeLookupText(state.selectedText);
-  }
-
-  function scheduleLookupFromSelection(readSelection, onLookup, schedule) {
-    const defer = schedule || ((callback) => setTimeout(callback, 0));
-    defer(() => {
-      const selection = readSelection();
-      const word = normalizeLookupText(selection ? selection.toString() : "");
-      if (word) onLookup(word, selection);
-    });
+  function createSelectionDispatcher(onAction, timers = {}) {
+    const setTimer = timers.set || ((callback, delay) => setTimeout(callback, delay));
+    const clearTimer = timers.clear || ((timer) => clearTimeout(timer));
+    let pendingTimer = null;
+    return {
+      schedule(readSelection, context, delay = 0) {
+        if (pendingTimer !== null) clearTimer(pendingTimer);
+        pendingTimer = setTimer(() => {
+          pendingTimer = null;
+          const selection = readSelection();
+          const action = classifySelection(selection ? selection.toString() : "");
+          if (action) onAction(action, selection, context);
+        }, delay);
+      },
+    };
   }
 
   function positionPopover(rect, popover, viewport) {
@@ -160,19 +238,25 @@
 
   return {
     addPdfBypass,
+    classifySelection,
+    createMeaningBadgeController,
+    createSelectionDispatcher,
     createNativeClient,
-    formatYoudaoPreview,
+    formatTranslationPreview,
     hasPdfBypass,
     isSafePdfSource,
-    isSecondLeftMouseUp,
+    meaningStyleBadge,
     menuTitles,
+    normalizeMeaningStyle,
+    normalizeSettings,
     normalizeLookupText,
     notificationFor,
     positionPopover,
     safeMessage,
-    scheduleLookupFromSelection,
-    selectionWordForDisplay,
+    shouldDismissPopover,
+    shouldHandleSelectionEvent,
     shouldRedirectPdf,
+    withMeaningStyle,
     wordAtOffset,
   };
 });

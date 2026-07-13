@@ -33,7 +33,7 @@ class InstallLayoutTests(unittest.TestCase):
     def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.2.0", manifest["version"])
+        self.assertEqual("1.5.0", manifest["version"])
         self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
         scripts = manifest["content_scripts"][0]
         self.assertEqual(
@@ -48,17 +48,51 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertIn('message.kind === "open_pdf_viewer"', background)
         self.assertIn('id="youdao-app-key"', options)
         self.assertIn('id="youdao-secret-key"', options)
-        self.assertIn('id="youdao-test-word"', options)
+        self.assertNotIn('id="youdao-test-word"', options)
         self.assertIn('id="youdao-preview"', options)
         self.assertIn('id="double-click-lookup"', options)
         self.assertIn('id="auto-open-pdf"', options)
+        self.assertIn('id="section-select"', options)
+        self.assertIn('id="new-section"', options)
+        self.assertIn('id="create-section"', options)
+        self.assertIn("有道文本翻译", options)
+        self.assertIn('id="youdao-test-text"', options)
+        options_script = (ROOT / "extension" / "options.js").read_text(encoding="utf-8")
+        self.assertIn('action: "test_youdao_translation"', options_script)
+        self.assertNotIn('action: "test_youdao_dictionary"', options_script)
+
+    def test_toolbar_popup_exposes_persistent_meaning_style_control(self):
+        manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
+        popup = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+        popup_script = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
+
+        self.assertEqual("popup.html", manifest["action"]["default_popup"])
+        self.assertIn('name="meaning-style"', popup)
+        self.assertIn('value="covered"', popup)
+        self.assertIn('value="plain"', popup)
+        self.assertIn('id="current-section"', popup)
+        self.assertIn('chrome.storage.local.set({ meaningStyle:', popup_script)
+        self.assertIn("chrome.runtime.openOptionsPage()", popup_script)
 
     def test_lookup_popover_uses_visible_standard_host_element(self):
         popover = (ROOT / "extension" / "lookup-popover.js").read_text(encoding="utf-8")
         self.assertIn('document.createElement("div")', popover)
         self.assertIn('this.host.id = "obsidian-vocabulary-lookup"', popover)
+        self.assertIn('this.host.dataset.ovcVersion = chrome.runtime.getManifest().version', popover)
         self.assertIn('"visibility", "visible", "important"', popover)
         self.assertNotIn('document.createElement("obsidian-vocabulary-lookup")', popover)
+
+    def test_web_and_pdf_selection_routes_include_translation(self):
+        popover = (ROOT / "extension" / "lookup-popover.js").read_text(encoding="utf-8")
+        content = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
+        viewer = (ROOT / "extension" / "viewer.js").read_text(encoding="utf-8")
+        self.assertIn('action: "translate_selection"', popover)
+        self.assertIn('action: "create_section_and_add_entry"', popover)
+        self.assertIn('action: "select_section"', popover)
+        self.assertIn('action.mode === "translation"', content)
+        self.assertIn('action.mode === "translation"', viewer)
+        self.assertIn('document.addEventListener("selectionchange"', viewer)
+        self.assertIn('window.addEventListener("mouseup"', viewer)
 
     def test_install_and_uninstall_scripts_are_idempotent_by_design(self):
         install = (ROOT / "install.ps1").read_text(encoding="utf-8-sig")

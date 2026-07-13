@@ -9,9 +9,41 @@ function eventChannel() {
   };
 }
 
-assert.deepStrictEqual(ui.menuTitles({ selectedChapter: 22 }), {
-  chapter: "加入 Chapter 22",
-  news: "加入 NEWS",
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }), {
+  section: "加入 Match Review",
+  append: "添加到笔记末尾",
+});
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }, "plain"), {
+  section: "加入 Match Review（明文）",
+  append: "添加到笔记末尾（明文）",
+});
+assert.strictEqual(ui.normalizeMeaningStyle("plain"), "plain");
+assert.strictEqual(ui.normalizeMeaningStyle("covered"), "covered");
+assert.strictEqual(ui.normalizeMeaningStyle("unexpected"), "covered");
+assert.strictEqual(ui.meaningStyleBadge("plain"), "明");
+assert.strictEqual(ui.meaningStyleBadge("covered"), "");
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "add_entry", target: "append", text: "word" }, "plain"),
+  { action: "add_entry", target: "append", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "create_section_and_add_entry", text: "word" }, "plain"),
+  { action: "create_section_and_add_entry", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "lookup_definition", text: "word" }, "plain"),
+  { action: "lookup_definition", text: "word" },
+);
+assert.deepStrictEqual(ui.normalizeSettings({
+  chapterFile: "chapter.md",
+  newsFile: "news.md",
+  selectedChapter: 22,
+  chapters: [21, 22],
+}), {
+  sectionFile: "chapter.md",
+  appendFile: "news.md",
+  selectedSection: "Chapter 22",
+  sections: ["Chapter 21", "Chapter 22"],
 });
 
 assert.strictEqual(ui.notificationFor({ ok: true, status: "added" }), null);
@@ -27,53 +59,109 @@ assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "lookup_failed", 
 assert.strictEqual(ui.safeMessage({ message: "ok" }), "ok");
 assert.strictEqual(ui.safeMessage({ message: "a".repeat(500) }).length, 200);
 
+assert.strictEqual(typeof ui.shouldDismissPopover, "function");
+const popoverHost = { contains: (target) => target === popoverHost };
+const outsideTarget = {};
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "scroll", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [{}, popoverHost, outsideTarget] },
+  popoverHost,
+  null,
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  null,
+), true);
+
+assert.strictEqual(typeof ui.shouldHandleSelectionEvent, "function");
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [{}, popoverHost] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), true);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  false,
+), true);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), true);
+
 assert.strictEqual(
-  ui.formatYoudaoPreview({
-    word: "ignominious",
-    phonetic: "ˌɪɡnəˈmɪniəs",
-    explains: ["adj. 可耻的", "adj. 不名誉的"],
+  ui.formatTranslationPreview({
+    sourceText: "Liverpool are playing well.",
+    translatedText: "利物浦踢得很好。",
+    source: "youdao",
   }),
-  "ignominious /ˌɪɡnəˈmɪniəs/\n• adj. 可耻的\n• adj. 不名誉的",
+  "Liverpool are playing well.\n→ 利物浦踢得很好。\n来源：有道翻译",
 );
-assert.strictEqual(ui.formatYoudaoPreview(null), "");
+assert.strictEqual(ui.formatTranslationPreview(null), "");
 
 assert.strictEqual(ui.normalizeLookupText("  “well-being,”  "), "well-being");
 assert.strictEqual(ui.normalizeLookupText("two words"), "");
 assert.strictEqual(ui.normalizeLookupText("中文"), "");
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 0, detail: 2 }), true);
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 0, detail: 1 }), false);
-assert.strictEqual(ui.isSecondLeftMouseUp({ button: 2, detail: 2 }), false);
+assert.deepStrictEqual(ui.classifySelection(" player "), {
+  mode: "definition",
+  text: "player",
+});
+assert.deepStrictEqual(ui.classifySelection("Liverpool\nare playing well."), {
+  mode: "translation",
+  text: "Liverpool are playing well.",
+});
+assert.deepStrictEqual(ui.classifySelection("Liverpool won 2 games."), {
+  mode: "translation",
+  text: "Liverpool won 2 games.",
+});
+assert.strictEqual(ui.classifySelection("hello world 世界"), null);
+assert.strictEqual(ui.classifySelection("hello world привет"), null);
+assert.strictEqual(ui.classifySelection("one ".repeat(126)), null);
 const ordinaryText = "Double-click ordinary words.";
 assert.strictEqual(
   ui.wordAtOffset(ordinaryText, ordinaryText.indexOf("ordinary") + 3),
   "ordinary",
 );
 assert.strictEqual(ui.wordAtOffset("well-being works", 5), "well-being");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: true,
-  selectedText: "Liverpool",
-}), "Liverpool");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: true,
-  selectedText: "two words",
-}), "");
-assert.strictEqual(ui.selectionWordForDisplay({
-  enabled: false,
-  selectedText: "Liverpool",
-}), "");
-
 let selectedText = "";
-let scheduledLookup = null;
-let lookedUpWord = "";
-ui.scheduleLookupFromSelection(
-  () => ({ toString: () => selectedText }),
-  (word) => { lookedUpWord = word; },
-  (callback) => { scheduledLookup = callback; },
+let timerId = 0;
+const pendingTimers = new Map();
+const dispatchedActions = [];
+const dispatcher = ui.createSelectionDispatcher(
+  (action) => dispatchedActions.push(action),
+  {
+    set(callback) {
+      const id = ++timerId;
+      pendingTimers.set(id, callback);
+      return id;
+    },
+    clear(id) { pendingTimers.delete(id); },
+  },
 );
-assert.strictEqual(lookedUpWord, "");
-selectedText = "ordinary";
-scheduledLookup();
-assert.strictEqual(lookedUpWord, "ordinary");
+selectedText = "ordinary words";
+dispatcher.schedule(() => ({ toString: () => selectedText }), null, 200);
+selectedText = "ordinary words in context";
+dispatcher.schedule(() => ({ toString: () => selectedText }), null, 200);
+for (const callback of pendingTimers.values()) callback();
+assert.deepStrictEqual(dispatchedActions, [
+  { mode: "translation", text: "ordinary words in context" },
+]);
 
 assert.deepStrictEqual(
   ui.positionPopover(
@@ -134,4 +222,25 @@ async function testNativeClient() {
   assert.strictEqual(ports.length, 2);
 }
 
-testNativeClient().then(() => console.log("extension lib tests passed"));
+async function testMeaningBadgeController() {
+  let meaningStyle = "covered";
+  let scheduled = null;
+  const badges = [];
+  const controller = ui.createMeaningBadgeController({
+    readStyle: async () => meaningStyle,
+    setBackground: async (color) => badges.push({ kind: "color", value: color }),
+    setText: async (value) => badges.push({ kind: "text", value }),
+    setTimer: (callback) => { scheduled = callback; },
+  });
+
+  await controller.sync();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "" });
+  await controller.showSuccess();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "✓" });
+  meaningStyle = "plain";
+  await scheduled();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "明" });
+}
+
+Promise.all([testNativeClient(), testMeaningBadgeController()])
+  .then(() => console.log("extension lib tests passed"));
