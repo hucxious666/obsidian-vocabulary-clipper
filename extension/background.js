@@ -5,9 +5,21 @@ const MENU_SECTION = "add-to-section";
 const MENU_APPEND = "append-to-note";
 const nativeClient = ClipperUi.createNativeClient(() => chrome.runtime.connectNative(HOST_NAME));
 
+async function loadMeaningStyle() {
+  const settings = await chrome.storage.local.get({ meaningStyle: "covered" });
+  return ClipperUi.normalizeMeaningStyle(settings.meaningStyle);
+}
+
+const badgeController = ClipperUi.createMeaningBadgeController({
+  readStyle: loadMeaningStyle,
+  setBackground: (color) => chrome.action.setBadgeBackgroundColor({ color }),
+  setText: (text) => chrome.action.setBadgeText({ text }),
+});
+
 async function sendNative(payload) {
   try {
-    return await nativeClient.send(payload);
+    const request = ClipperUi.withMeaningStyle(payload, await loadMeaningStyle());
+    return await nativeClient.send(request);
   } catch (error) {
     return { ok: false, status: "write_failed", message: "无法连接本地服务，请重新运行安装脚本" };
   }
@@ -28,17 +40,19 @@ async function loadSettings() {
 }
 
 async function syncMenus() {
-  const settings = await loadSettings();
-  const titles = ClipperUi.menuTitles(settings);
+  const [settings, meaningStyle] = await Promise.all([loadSettings(), loadMeaningStyle()]);
+  const titles = ClipperUi.menuTitles(settings, meaningStyle);
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({ id: MENU_SECTION, title: titles.section, contexts: ["selection"] });
   chrome.contextMenus.create({ id: MENU_APPEND, title: titles.append, contexts: ["selection"] });
 }
 
+async function syncModeBadge() {
+  await badgeController.sync();
+}
+
 async function showSuccess() {
-  await chrome.action.setBadgeBackgroundColor({ color: "#16803a" });
-  await chrome.action.setBadgeText({ text: "✓" });
-  setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1600);
+  await badgeController.showSuccess();
 }
 
 async function showResult(response) {
@@ -91,6 +105,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onInstalled.addListener(syncMenus);
-chrome.runtime.onStartup.addListener(syncMenus);
-syncMenus();
+async function initializeUi() {
+  await Promise.all([syncMenus(), syncModeBadge()]);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.meaningStyle) void initializeUi();
+});
+chrome.runtime.onInstalled.addListener(initializeUi);
+chrome.runtime.onStartup.addListener(initializeUi);
+void initializeUi();

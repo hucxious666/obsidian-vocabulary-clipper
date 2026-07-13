@@ -13,6 +13,27 @@ assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }), {
   section: "加入 Match Review",
   append: "添加到笔记末尾",
 });
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }, "plain"), {
+  section: "加入 Match Review（明文）",
+  append: "添加到笔记末尾（明文）",
+});
+assert.strictEqual(ui.normalizeMeaningStyle("plain"), "plain");
+assert.strictEqual(ui.normalizeMeaningStyle("covered"), "covered");
+assert.strictEqual(ui.normalizeMeaningStyle("unexpected"), "covered");
+assert.strictEqual(ui.meaningStyleBadge("plain"), "明");
+assert.strictEqual(ui.meaningStyleBadge("covered"), "");
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "add_entry", target: "append", text: "word" }, "plain"),
+  { action: "add_entry", target: "append", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "create_section_and_add_entry", text: "word" }, "plain"),
+  { action: "create_section_and_add_entry", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "lookup_definition", text: "word" }, "plain"),
+  { action: "lookup_definition", text: "word" },
+);
 assert.deepStrictEqual(ui.normalizeSettings({
   chapterFile: "chapter.md",
   newsFile: "news.md",
@@ -201,4 +222,25 @@ async function testNativeClient() {
   assert.strictEqual(ports.length, 2);
 }
 
-testNativeClient().then(() => console.log("extension lib tests passed"));
+async function testMeaningBadgeController() {
+  let meaningStyle = "covered";
+  let scheduled = null;
+  const badges = [];
+  const controller = ui.createMeaningBadgeController({
+    readStyle: async () => meaningStyle,
+    setBackground: async (color) => badges.push({ kind: "color", value: color }),
+    setText: async (value) => badges.push({ kind: "text", value }),
+    setTimer: (callback) => { scheduled = callback; },
+  });
+
+  await controller.sync();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "" });
+  await controller.showSuccess();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "✓" });
+  meaningStyle = "plain";
+  await scheduled();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "明" });
+}
+
+Promise.all([testNativeClient(), testMeaningBadgeController()])
+  .then(() => console.log("extension lib tests passed"));

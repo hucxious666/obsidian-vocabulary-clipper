@@ -6,6 +6,7 @@ from typing import Callable
 
 from .config import AppConfig, ConfigStore, SettingsValidationError
 from .dictionary import DictionaryLookup, LookupNotFound
+from .entry import added_response, normalize_meaning_style
 from .markdown_writer import (
     ConcurrentWriteError,
     DuplicateEntry,
@@ -219,6 +220,7 @@ class ClipperService:
         )
         if target not in {"section", "append"}:
             return self._error("invalid", "写入目标无效")
+        meaning_style = normalize_meaning_style(message.get("meaningStyle"))
         word = normalize_selection(str(message.get("text") or ""))
         config = self.config_store.load()
         try:
@@ -230,17 +232,17 @@ class ClipperService:
             if not meaning:
                 meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
             result = write_entry_atomic(
-                path, target, section, word, dictionary_entry.phonetic, meaning, self.backup_root
+                path,
+                target,
+                section,
+                word,
+                dictionary_entry.phonetic,
+                meaning,
+                self.backup_root,
+                meaning_style,
             )
             label = section if target == "section" else "笔记末尾"
-            return {
-                "ok": True,
-                "status": "added",
-                "word": word,
-                "number": result.number,
-                "targetLabel": label,
-                "message": f"已加入 {label}",
-            }
+            return added_response(word, result.number, label, meaning_style=meaning_style)
         except DuplicateEntry as error:
             return self._error("duplicate", str(error))
         except (LookupNotFound, BaiduTranslateError) as error:
@@ -263,28 +265,26 @@ class ClipperService:
         original = path.read_bytes()
         entry = None
         word = ""
+        meaning_style = normalize_meaning_style(message.get("meaningStyle"))
         if add_entry:
             word = normalize_selection(str(message.get("text") or ""))
             dictionary_entry = self.dictionary_factory(self.dictionary_path).lookup(word)
             meaning = normalize_ecdict_translation(dictionary_entry.translation)
             if not meaning:
                 meaning = self.translator_factory(config.app_id, config.secret_key).translate(word)
-            entry = (word, dictionary_entry.phonetic, meaning)
+            entry = (word, dictionary_entry.phonetic, meaning, meaning_style)
         result = create_section_atomic(path, name, self.backup_root, entry)
         try:
             self.config_store.save(replace(config, selected_section=name))
         except Exception:
             restore_bytes_atomic(path, original)
             raise
-        return {
-            "ok": True,
-            "status": "added" if add_entry else "created",
-            "word": word or None,
-            "number": result.number,
-            "targetLabel": name,
-            "message": f"已创建并加入 {name}" if add_entry else f"已创建 {name}",
-            **self.config_store.public_settings(),
-        }
+        response = (
+            added_response(word, result.number, name, meaning_style=meaning_style, created=True)
+            if add_entry
+            else {"ok": True, "status": "created", "message": f"已创建 {name}"}
+        )
+        return {**response, **self.config_store.public_settings()}
 
     def _read_sections(self, path: Path) -> list[str]:
         data = path.read_bytes()

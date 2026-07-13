@@ -33,7 +33,7 @@ class InstallLayoutTests(unittest.TestCase):
     def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.4.0", manifest["version"])
+        self.assertEqual("1.5.0", manifest["version"])
         self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
         scripts = manifest["content_scripts"][0]
         self.assertEqual(
@@ -60,6 +60,19 @@ class InstallLayoutTests(unittest.TestCase):
         options_script = (ROOT / "extension" / "options.js").read_text(encoding="utf-8")
         self.assertIn('action: "test_youdao_translation"', options_script)
         self.assertNotIn('action: "test_youdao_dictionary"', options_script)
+
+    def test_toolbar_popup_exposes_persistent_meaning_style_control(self):
+        manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
+        popup = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+        popup_script = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
+
+        self.assertEqual("popup.html", manifest["action"]["default_popup"])
+        self.assertIn('name="meaning-style"', popup)
+        self.assertIn('value="covered"', popup)
+        self.assertIn('value="plain"', popup)
+        self.assertIn('id="current-section"', popup)
+        self.assertIn('chrome.storage.local.set({ meaningStyle:', popup_script)
+        self.assertIn("chrome.runtime.openOptionsPage()", popup_script)
 
     def test_lookup_popover_uses_visible_standard_host_element(self):
         popover = (ROOT / "extension" / "lookup-popover.js").read_text(encoding="utf-8")

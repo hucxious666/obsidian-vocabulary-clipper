@@ -156,6 +156,61 @@ class ClipperServiceTests(unittest.TestCase):
         self.assertEqual("笔记末尾", response["targetLabel"])
         self.assertIn("34. word /wɜːd/", self.news.read_text(encoding="utf-8"))
 
+    def test_plain_style_applies_to_section_append_and_create_section(self):
+        section_response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "section",
+                "sectionName": "阅读",
+                "text": "word",
+                "meaningStyle": "plain",
+            }
+        )
+        append_response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "append",
+                "text": "fallback",
+                "meaningStyle": "plain",
+            }
+        )
+        create_response = self.service.handle(
+            {
+                "action": "create_section_and_add_entry",
+                "sectionName": "明文章节",
+                "text": "repeat",
+                "meaningStyle": "plain",
+            }
+        )
+
+        self.assertEqual("plain", section_response["meaningStyle"])
+        self.assertEqual("plain", append_response["meaningStyle"])
+        self.assertEqual("plain", create_response["meaningStyle"])
+        self.assertIn("1. word /wɜːd/: n.单词；词语", self.chapter.read_text(encoding="utf-8"))
+        self.assertIn("34. fallback /", self.news.read_text(encoding="utf-8"))
+        self.assertNotIn('<span class="meaning">百度兜底</span>', self.news.read_text(encoding="utf-8"))
+        created = self.chapter.read_text(encoding="utf-8").split("## 明文章节", 1)[1]
+        self.assertNotIn('<span class="meaning">', created)
+
+    def test_missing_style_defaults_to_covered_and_invalid_style_does_not_write(self):
+        covered = self.service.handle(
+            {"action": "add_entry", "target": "section", "sectionName": "阅读", "text": "word"}
+        )
+        before = self.news.read_bytes()
+        invalid = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "append",
+                "text": "fallback",
+                "meaningStyle": "unexpected",
+            }
+        )
+
+        self.assertEqual("covered", covered["meaningStyle"])
+        self.assertIn('<span class="meaning">', self.chapter.read_text(encoding="utf-8"))
+        self.assertEqual("invalid", invalid["status"])
+        self.assertEqual(before, self.news.read_bytes())
+
     def test_baidu_is_only_used_when_ecdict_translation_is_empty(self):
         response = self.service.handle(
             {"action": "add_entry", "target": "chapter", "text": "fallback"}

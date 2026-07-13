@@ -113,6 +113,14 @@ class NewsInsertionTests(unittest.TestCase):
         updated, _ = insert_news_entry("", "safe", "seɪf", "A < B & C > D")
         self.assertIn("A &lt; B &amp; C &gt; D", updated)
 
+    def test_plain_style_writes_escaped_meaning_without_css_wrapper(self):
+        updated, _ = insert_news_entry(
+            "", "safe", "seɪf", "A < B & C > D", meaning_style="plain"
+        )
+
+        self.assertEqual("1. safe /seɪf/: A &lt; B &amp; C &gt; D\n", updated)
+        self.assertNotIn('<span class="meaning">', updated)
+
 
 class AtomicWriteTests(unittest.TestCase):
     def test_preserves_utf8_bom_and_crlf(self):

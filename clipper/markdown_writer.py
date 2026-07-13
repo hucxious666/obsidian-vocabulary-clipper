@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import os
 import re
 import shutil
@@ -11,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .entry import format_entry
 from .selection import canonical_word
 from .sections import (
     find_chapters,
@@ -20,20 +20,16 @@ from .sections import (
 )
 
 
-class DuplicateEntry(ValueError):
-    pass
+class DuplicateEntry(ValueError): pass
 
 
-class ChapterNotFound(ValueError):
-    pass
+class ChapterNotFound(ValueError): pass
 
 
-class SectionNotFound(ValueError):
-    pass
+class SectionNotFound(ValueError): pass
 
 
-class ConcurrentWriteError(OSError):
-    pass
+class ConcurrentWriteError(OSError): pass
 
 
 @dataclass(frozen=True)
@@ -48,15 +44,6 @@ _THEMATIC_BREAK = re.compile(r"^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$", re.MULTILI
 
 def _newline_for(source: str) -> str:
     return "\r\n" if "\r\n" in source else "\n"
-
-
-def _format_entry(number: int, word: str, phonetic: str, meaning: str) -> str:
-    clean_phonetic = phonetic.strip().strip("/").strip()
-    clean_meaning = " ".join(meaning.split())
-    return (
-        f"{number}. {html.escape(word, quote=False)} /{html.escape(clean_phonetic, quote=False)}/: "
-        f'<span class="meaning">{html.escape(clean_meaning, quote=False)}</span>'
-    )
 
 
 def _entry_words(source: str) -> set[str]:
@@ -89,7 +76,12 @@ def _append_to_chapter_region(region: str, entry: str, newline: str) -> str:
 
 
 def insert_section_entry(
-    source: str, section: str, word: str, phonetic: str, meaning: str
+    source: str,
+    section: str,
+    word: str,
+    phonetic: str,
+    meaning: str,
+    meaning_style: str = "covered",
 ) -> tuple[str, int]:
     name = normalize_section_name(section)
     headings = section_headings(source)
@@ -105,16 +97,25 @@ def insert_section_entry(
         numbers = [int(match.group(1)) for match in _ENTRY.finditer(region)]
         number = max(numbers, default=0) + 1
         updated_region = _append_to_chapter_region(
-            region, _format_entry(number, word, phonetic, meaning), _newline_for(source)
+            region,
+            format_entry(number, word, phonetic=phonetic, meaning=meaning, meaning_style=meaning_style),
+            _newline_for(source),
         )
         return source[:heading.end] + updated_region + source[end:], number
     raise SectionNotFound(f"未找到章节：{name}")
 
 
 def insert_chapter_entry(
-    source: str, chapter: int, word: str, phonetic: str, meaning: str
+    source: str,
+    chapter: int,
+    word: str,
+    phonetic: str,
+    meaning: str,
+    meaning_style: str = "covered",
 ) -> tuple[str, int]:
-    return insert_section_entry(source, f"Chapter {int(chapter)}", word, phonetic, meaning)
+    return insert_section_entry(
+        source, f"Chapter {int(chapter)}", word, phonetic, meaning, meaning_style
+    )
 
 
 def create_section(source: str, section: str) -> tuple[str, str]:
@@ -144,12 +145,18 @@ def _tail_number(source: str) -> int:
     return max(numbers, default=0)
 
 
-def insert_news_entry(source: str, word: str, phonetic: str, meaning: str) -> tuple[str, int]:
+def insert_news_entry(
+    source: str,
+    word: str,
+    phonetic: str,
+    meaning: str,
+    meaning_style: str = "covered",
+) -> tuple[str, int]:
     if canonical_word(word) in _entry_words(source):
         raise DuplicateEntry(f"{word} 已存在于笔记")
     number = _tail_number(source) + 1
     newline = _newline_for(source)
-    entry = _format_entry(number, word, phonetic, meaning)
+    entry = format_entry(number, word, phonetic=phonetic, meaning=meaning, meaning_style=meaning_style)
     if not source.strip():
         return entry + newline, number
     updated = source.rstrip(" \t\r\n") + newline + entry
@@ -255,13 +262,16 @@ def write_entry_atomic(
     phonetic: str,
     meaning: str,
     backup_root: Path,
+    meaning_style: str = "covered",
 ) -> WriteResult:
     def transform(source: str) -> tuple[str, WriteResult]:
         if target in {"chapter", "section"}:
             name = f"Chapter {int(section or 0)}" if target == "chapter" else str(section or "")
-            updated, number = insert_section_entry(source, name, word, phonetic, meaning)
+            updated, number = insert_section_entry(
+                source, name, word, phonetic, meaning, meaning_style
+            )
         elif target in {"news", "append"}:
-            updated, number = insert_news_entry(source, word, phonetic, meaning)
+            updated, number = insert_news_entry(source, word, phonetic, meaning, meaning_style)
         else:
             raise ValueError("未知写入目标")
         return updated, WriteResult(number=number, target=target)
@@ -273,7 +283,7 @@ def create_section_atomic(
     path: Path,
     section: str,
     backup_root: Path,
-    entry: tuple[str, str, str] | None = None,
+    entry: tuple[str, str, str, str] | None = None,
 ) -> WriteResult:
     name = normalize_section_name(section)
 

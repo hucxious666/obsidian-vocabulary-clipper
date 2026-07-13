@@ -20,9 +20,42 @@
     };
   }
 
-  function menuTitles(settings) {
+  function normalizeMeaningStyle(value) {
+    return value === "plain" ? "plain" : "covered";
+  }
+
+  function meaningStyleBadge(value) {
+    return normalizeMeaningStyle(value) === "plain" ? "明" : "";
+  }
+
+  function createMeaningBadgeController(options) {
+    const setTimer = options.setTimer || ((callback, delay) => setTimeout(callback, delay));
+    async function sync() {
+      await options.setBackground("#c05a16");
+      await options.setText(meaningStyleBadge(await options.readStyle()));
+    }
+    async function showSuccess() {
+      await options.setBackground("#16803a");
+      await options.setText("✓");
+      setTimer(() => sync(), 1600);
+    }
+    return { showSuccess, sync };
+  }
+
+  function withMeaningStyle(payload, value) {
+    const writeActions = new Set(["add_entry", "create_section_and_add_entry"]);
+    return writeActions.has(payload && payload.action)
+      ? { ...payload, meaningStyle: normalizeMeaningStyle(value) }
+      : payload;
+  }
+
+  function menuTitles(settings, meaningStyle = "covered") {
     const value = normalizeSettings(settings);
-    return { section: `加入 ${value.selectedSection}`, append: "添加到笔记末尾" };
+    const suffix = normalizeMeaningStyle(meaningStyle) === "plain" ? "（明文）" : "";
+    return {
+      section: `加入 ${value.selectedSection}${suffix}`,
+      append: `添加到笔记末尾${suffix}`,
+    };
   }
 
   function safeMessage(response) {
@@ -206,12 +239,15 @@
   return {
     addPdfBypass,
     classifySelection,
+    createMeaningBadgeController,
     createSelectionDispatcher,
     createNativeClient,
     formatTranslationPreview,
     hasPdfBypass,
     isSafePdfSource,
+    meaningStyleBadge,
     menuTitles,
+    normalizeMeaningStyle,
     normalizeSettings,
     normalizeLookupText,
     notificationFor,
@@ -220,6 +256,7 @@
     shouldDismissPopover,
     shouldHandleSelectionEvent,
     shouldRedirectPdf,
+    withMeaningStyle,
     wordAtOffset,
   };
 });
