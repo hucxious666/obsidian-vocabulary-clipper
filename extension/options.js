@@ -1,18 +1,21 @@
 const DEFAULTS = {
-  chapterFile: "D:\\obsidian\\repository\\Workhouse\\study\\词汇积累-蒙蔽版.md",
-  newsFile: "D:\\obsidian\\repository\\Workhouse\\study\\NEWS WORD - COVERED.md",
-  selectedChapter: 22,
-  chapters: Array.from({ length: 22 }, (_, index) => index + 1),
+  sectionFile: "D:\\obsidian\\repository\\Workhouse\\study\\词汇积累-蒙蔽版.md",
+  appendFile: "D:\\obsidian\\repository\\Workhouse\\study\\NEWS WORD - COVERED.md",
+  selectedSection: "Chapter 22",
+  sections: Array.from({ length: 22 }, (_, index) => `Chapter ${index + 1}`),
   credentialsConfigured: false,
   youdaoCredentialsConfigured: false,
   doubleClickLookupEnabled: true,
   autoOpenPdfEnabled: true,
+  activeDictionary: "ecdict",
+  dictionaries: [],
 };
 
 const elements = {
-  chapterFile: document.querySelector("#chapter-file"),
-  newsFile: document.querySelector("#news-file"),
-  chapter: document.querySelector("#chapter"),
+  sectionFile: document.querySelector("#section-file"),
+  appendFile: document.querySelector("#append-file"),
+  section: document.querySelector("#section-select"),
+  newSection: document.querySelector("#new-section"),
   appId: document.querySelector("#app-id"),
   secretKey: document.querySelector("#secret-key"),
   credentialStatus: document.querySelector("#credential-status"),
@@ -24,6 +27,8 @@ const elements = {
   message: document.querySelector("#message"),
   doubleClickLookup: document.querySelector("#double-click-lookup"),
   autoOpenPdf: document.querySelector("#auto-open-pdf"),
+  dictionary: document.querySelector("#dictionary-select"),
+  dictionaryStatus: document.querySelector("#dictionary-status"),
 };
 
 function callNative(payload) {
@@ -35,22 +40,40 @@ function showMessage(text, error = false) {
   elements.message.classList.toggle("error", error);
 }
 
-function populateChapters(chapters, selected) {
-  elements.chapter.replaceChildren();
-  for (const value of chapters || []) {
+function populateSections(sections, selected) {
+  elements.section.replaceChildren();
+  for (const value of sections || []) {
     const option = document.createElement("option");
     option.value = String(value);
-    option.textContent = `Chapter ${value}`;
-    option.selected = Number(value) === Number(selected);
-    elements.chapter.append(option);
+    option.textContent = String(value);
+    option.selected = String(value).toLocaleLowerCase() === String(selected).toLocaleLowerCase();
+    elements.section.append(option);
   }
 }
 
+function populateDictionaries(dictionaries, selected) {
+  elements.dictionary.replaceChildren();
+  for (const dictionary of dictionaries || []) {
+    const option = document.createElement("option");
+    option.value = dictionary.id;
+    option.textContent = dictionary.installed ? dictionary.name : `${dictionary.name}（未安装）`;
+    option.disabled = !dictionary.installed;
+    option.selected = dictionary.id === selected;
+    elements.dictionary.append(option);
+  }
+  const active = (dictionaries || []).find((item) => item.id === selected);
+  const ready = Boolean(active && active.installed);
+  elements.dictionaryStatus.textContent = ready ? "已安装" : "未安装";
+  elements.dictionaryStatus.classList.toggle("ready", ready);
+}
+
 function applySettings(settings) {
-  const value = { ...DEFAULTS, ...(settings || {}) };
-  elements.chapterFile.value = value.chapterFile;
-  elements.newsFile.value = value.newsFile;
-  populateChapters(value.chapters, value.selectedChapter);
+  const raw = { ...DEFAULTS, ...(settings || {}) };
+  const value = { ...raw, ...ClipperUi.normalizeSettings(raw) };
+  elements.sectionFile.value = value.sectionFile;
+  elements.appendFile.value = value.appendFile;
+  populateSections(value.sections, value.selectedSection);
+  populateDictionaries(value.dictionaries, value.activeDictionary);
   elements.credentialStatus.textContent = value.credentialsConfigured ? "已安全配置" : "未配置";
   elements.credentialStatus.classList.toggle("ready", value.credentialsConfigured);
   elements.youdaoCredentialStatus.textContent = value.youdaoCredentialsConfigured
@@ -82,12 +105,12 @@ async function saveBrowserPreferences() {
 }
 
 async function browse(target) {
-  const input = target === "chapter" ? elements.chapterFile : elements.newsFile;
+  const input = target === "section" ? elements.sectionFile : elements.appendFile;
   const response = await callNative({ action: "browse_file", target, initialPath: input.value });
   if (!response || response.status === "cancelled") return;
   if (!response.ok) return showMessage(response.message || "选择文件失败", true);
   input.value = response.path;
-  if (target === "chapter") populateChapters(response.chapters, response.chapters.at(-1));
+  if (target === "section") populateSections(response.sections, response.sections.at(-1));
   showMessage("文件已选择，保存后生效。");
 }
 
@@ -95,13 +118,14 @@ async function save() {
   showMessage("正在保存…");
   const response = await callNative({
     action: "save_settings",
-    chapterFile: elements.chapterFile.value,
-    newsFile: elements.newsFile.value,
-    selectedChapter: Number(elements.chapter.value),
+    sectionFile: elements.sectionFile.value,
+    appendFile: elements.appendFile.value,
+    selectedSection: elements.section.value,
     appId: elements.appId.value,
     secretKey: elements.secretKey.value,
     youdaoAppKey: elements.youdaoAppKey.value,
     youdaoSecretKey: elements.youdaoSecretKey.value,
+    activeDictionary: elements.dictionary.value,
   });
   if (!response || !response.ok) return showMessage((response && response.message) || "保存失败", true);
   elements.appId.value = "";
@@ -110,6 +134,20 @@ async function save() {
   elements.youdaoSecretKey.value = "";
   applySettings(response);
   showMessage("设置已保存，右键菜单已更新。");
+}
+
+async function createSection() {
+  showMessage("正在新增章节…");
+  const response = await callNative({
+    action: "create_section",
+    sectionName: elements.newSection.value,
+  });
+  if (!response || !response.ok) {
+    return showMessage((response && response.message) || "新增章节失败", true);
+  }
+  elements.newSection.value = "";
+  applySettings(response);
+  showMessage(`已新增并选择章节：${response.selectedSection}`);
 }
 
 async function testYoudaoTranslation() {
@@ -134,12 +172,47 @@ async function testConnection() {
   showMessage((response && response.message) || "测试失败", !response || !response.ok);
 }
 
+async function refreshDictionaries() {
+  const response = await callNative({ action: "get_settings" });
+  if (!response || !response.ok) return showMessage((response && response.message) || "刷新失败", true);
+  applySettings(response);
+  showMessage("词典安装状态已刷新。");
+}
+
+async function selectDictionary() {
+  const selected = elements.dictionary.value;
+  elements.dictionary.disabled = true;
+  showMessage("正在切换词典…");
+  const response = await callNative({
+    action: "select_dictionary",
+    dictionaryId: selected,
+  });
+  elements.dictionary.disabled = false;
+  if (!response || !response.ok) {
+    const latest = await callNative({ action: "get_settings" });
+    if (latest && latest.ok) applySettings(latest);
+    return showMessage((response && response.message) || "切换词典失败", true);
+  }
+  applySettings(response);
+  const active = response.dictionaries.find((item) => item.id === response.activeDictionary);
+  showMessage(`当前词典已切换为 ${active ? active.name : response.activeDictionary}。`);
+}
+
+async function manageDictionaries() {
+  const response = await callNative({ action: "open_dictionary_manager" });
+  showMessage((response && response.message) || "无法打开词典下载器", !response || !response.ok);
+}
+
 document.querySelectorAll("[data-browse]").forEach((button) => {
   button.addEventListener("click", () => browse(button.dataset.browse));
 });
 document.querySelector("#save").addEventListener("click", save);
+document.querySelector("#create-section").addEventListener("click", createSection);
 document.querySelector("#test").addEventListener("click", testConnection);
 document.querySelector("#test-youdao").addEventListener("click", testYoudaoTranslation);
+document.querySelector("#refresh-dictionaries").addEventListener("click", refreshDictionaries);
+document.querySelector("#manage-dictionaries").addEventListener("click", manageDictionaries);
+elements.dictionary.addEventListener("change", selectDictionary);
 elements.doubleClickLookup.addEventListener("change", saveBrowserPreferences);
 elements.autoOpenPdf.addEventListener("change", saveBrowserPreferences);
 load();

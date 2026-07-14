@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from clipper.config import AppConfig, ConfigStore
 from clipper.dictionary import DictionaryEntry, LookupNotFound
@@ -44,13 +45,41 @@ class FakeYoudao:
         return "有道翻译结果"
 
 
+class FakeDictionaryRepository:
+    def __init__(self):
+        self.lookups = []
+        self.installed = {"ecdict", "kaikki-en"}
+
+    def list_packs(self):
+        return [
+            {"id": "ecdict", "name": "ECDICT 完整字段版", "installed": True},
+            {"id": "kaikki-en", "name": "Kaikki English", "installed": "kaikki-en" in self.installed},
+        ]
+
+    def require_installed(self, pack_id):
+        if pack_id not in self.installed:
+            raise LookupNotFound("离线词典尚未安装")
+        return Path(f"{pack_id}.sqlite3")
+
+    def lookup(self, pack_id, word):
+        self.require_installed(pack_id)
+        self.lookups.append((pack_id, word))
+        entry = FakeDictionary().lookup(word)
+        if pack_id == "kaikki-en":
+            return DictionaryEntry(
+                entry.matched_word, entry.phonetic, "", definition="a repeated event",
+                source_id="kaikki-en", source_name="Kaikki English",
+            )
+        return entry
+
+
 class ClipperServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
         self.chapter = root / "chapters.md"
         self.news = root / "news.md"
-        self.chapter.write_text("**chapter 22**\n\n", encoding="utf-8")
+        self.chapter.write_text("**chapter 22**\n\n## 阅读\n\n", encoding="utf-8")
         self.news.write_text("*continue*\n\n33. old /oʊld/: <span class=\"meaning\">旧</span>\n", encoding="utf-8")
         self.store = ConfigStore(root / "config.json", MemoryProtector())
         self.store.save(
@@ -66,6 +95,8 @@ class ClipperServiceTests(unittest.TestCase):
         )
         FakeTranslator.calls = []
         FakeYoudao.calls = []
+        self.repository = FakeDictionaryRepository()
+        self.manager_opened = []
         self.service = ClipperService(
             self.store,
             root / "dict.db",
@@ -74,6 +105,8 @@ class ClipperServiceTests(unittest.TestCase):
             translator_factory=lambda _id, _key: FakeTranslator(),
             youdao_factory=lambda _id, _key: FakeYoudao(),
             file_picker=lambda _initial: str(self.news),
+            dictionary_repository=self.repository,
+            dictionary_manager_launcher=lambda: self.manager_opened.append(True),
         )
 
     def tearDown(self):
@@ -86,6 +119,181 @@ class ClipperServiceTests(unittest.TestCase):
         self.assertIn("1. word /wɜːd/", self.chapter.read_text(encoding="utf-8"))
         self.assertIn("n.单词；词语", self.chapter.read_text(encoding="utf-8"))
         self.assertEqual([], FakeTranslator.calls)
+
+    def test_settings_expose_dictionary_status_and_selected_pack(self):
+        response = self.service.handle({"action": "get_settings"})
+
+        self.assertEqual("ecdict", response["activeDictionary"])
+        self.assertEqual("Kaikki English", response["dictionaries"][1]["name"])
+        self.assertTrue(response["dictionaries"][1]["installed"])
+
+    def test_save_settings_switches_lookup_to_installed_dictionary(self):
+        response = self.service.handle({
+            "action": "save_settings",
+            "sectionFile": str(self.chapter),
+            "appendFile": str(self.news),
+            "selectedSection": "Chapter 22",
+            "activeDictionary": "kaikki-en",
+        })
+        lookup = self.service.handle({"action": "lookup_definition", "text": "repeat"})
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("kaikki-en", self.store.load().dictionary_id)
+        self.assertEqual(("kaikki-en", "repeat"), self.repository.lookups[-1])
+        self.assertEqual("Kaikki English", lookup["definition"]["sourceName"])
+        self.assertEqual("a repeated event", lookup["definition"]["groups"][0]["definitions"][0])
+
+    def test_select_dictionary_persists_without_opening_manager(self):
+        response = self.service.handle({
+            "action": "select_dictionary",
+            "dictionaryId": "kaikki-en",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("selected", response["status"])
+        self.assertEqual("kaikki-en", response["activeDictionary"])
+        self.assertEqual("kaikki-en", self.store.load().dictionary_id)
+        self.assertEqual([], self.manager_opened)
+
+    def test_save_settings_rejects_uninstalled_dictionary(self):
+        self.repository.installed.remove("kaikki-en")
+        response = self.service.handle({
+            "action": "save_settings",
+            "sectionFile": str(self.chapter),
+            "appendFile": str(self.news),
+            "selectedSection": "Chapter 22",
+            "activeDictionary": "kaikki-en",
+        })
+        self.assertEqual("lookup_failed", response["status"])
+        self.assertEqual("ecdict", self.store.load().dictionary_id)
+
+    def test_opens_visual_dictionary_manager(self):
+        response = self.service.handle({"action": "open_dictionary_manager"})
+        self.assertTrue(response["ok"])
+        self.assertEqual([True], self.manager_opened)
+
+    def test_add_entry_can_target_named_section(self):
+        response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "section",
+                "sectionName": "阅读",
+                "text": "word",
+            }
+        )
+
+        self.assertEqual("added", response["status"])
+        self.assertEqual("阅读", response["targetLabel"])
+        reading = self.chapter.read_text(encoding="utf-8").split("## 阅读", 1)[1]
+        self.assertIn("1. word /wɜːd/", reading)
+
+    def test_select_section_updates_default(self):
+        response = self.service.handle(
+            {"action": "select_section", "sectionName": "阅读"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("阅读", self.store.load().selected_section)
+        self.assertEqual("阅读", response["selectedSection"])
+
+    def test_create_section_appends_h2_and_selects_it(self):
+        response = self.service.handle(
+            {"action": "create_section", "sectionName": "  Match   Review  "}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("Match Review", self.store.load().selected_section)
+        self.assertTrue(self.chapter.read_text(encoding="utf-8").endswith("## Match Review\n"))
+
+    def test_create_section_and_add_entry_is_one_operation(self):
+        response = self.service.handle(
+            {
+                "action": "create_section_and_add_entry",
+                "sectionName": "比赛",
+                "text": "word",
+            }
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("比赛", response["targetLabel"])
+        self.assertEqual("比赛", self.store.load().selected_section)
+        created = self.chapter.read_text(encoding="utf-8").split("## 比赛", 1)[1]
+        self.assertIn("1. word /wɜːd/", created)
+
+    def test_create_section_rolls_back_note_when_config_save_fails(self):
+        before = self.chapter.read_bytes()
+
+        with patch.object(self.store, "save", side_effect=OSError("disk full")):
+            response = self.service.handle(
+                {"action": "create_section", "sectionName": "不应残留"}
+            )
+
+        self.assertEqual("write_failed", response["status"])
+        self.assertEqual(before, self.chapter.read_bytes())
+
+    def test_append_target_writes_to_append_note(self):
+        response = self.service.handle(
+            {"action": "add_entry", "target": "append", "text": "word"}
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual("笔记末尾", response["targetLabel"])
+        self.assertIn("34. word /wɜːd/", self.news.read_text(encoding="utf-8"))
+
+    def test_plain_style_applies_to_section_append_and_create_section(self):
+        section_response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "section",
+                "sectionName": "阅读",
+                "text": "word",
+                "meaningStyle": "plain",
+            }
+        )
+        append_response = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "append",
+                "text": "fallback",
+                "meaningStyle": "plain",
+            }
+        )
+        create_response = self.service.handle(
+            {
+                "action": "create_section_and_add_entry",
+                "sectionName": "明文章节",
+                "text": "repeat",
+                "meaningStyle": "plain",
+            }
+        )
+
+        self.assertEqual("plain", section_response["meaningStyle"])
+        self.assertEqual("plain", append_response["meaningStyle"])
+        self.assertEqual("plain", create_response["meaningStyle"])
+        self.assertIn("1. word /wɜːd/: n.单词；词语", self.chapter.read_text(encoding="utf-8"))
+        self.assertIn("34. fallback /", self.news.read_text(encoding="utf-8"))
+        self.assertNotIn('<span class="meaning">百度兜底</span>', self.news.read_text(encoding="utf-8"))
+        created = self.chapter.read_text(encoding="utf-8").split("## 明文章节", 1)[1]
+        self.assertNotIn('<span class="meaning">', created)
+
+    def test_missing_style_defaults_to_covered_and_invalid_style_does_not_write(self):
+        covered = self.service.handle(
+            {"action": "add_entry", "target": "section", "sectionName": "阅读", "text": "word"}
+        )
+        before = self.news.read_bytes()
+        invalid = self.service.handle(
+            {
+                "action": "add_entry",
+                "target": "append",
+                "text": "fallback",
+                "meaningStyle": "unexpected",
+            }
+        )
+
+        self.assertEqual("covered", covered["meaningStyle"])
+        self.assertIn('<span class="meaning">', self.chapter.read_text(encoding="utf-8"))
+        self.assertEqual("invalid", invalid["status"])
+        self.assertEqual(before, self.news.read_bytes())
 
     def test_baidu_is_only_used_when_ecdict_translation_is_empty(self):
         response = self.service.handle(
@@ -110,9 +318,14 @@ class ClipperServiceTests(unittest.TestCase):
                 "word": "word",
                 "phonetic": "wɜːd",
                 "source": "ecdict",
+                "sourceId": "ecdict",
+                "sourceName": "ECDICT",
                 "groups": [
                     {"partOfSpeech": "n.", "definitions": ["单词", "词语"]}
                 ],
+                "englishGroups": [],
+                "examples": [],
+                "metadata": {},
             },
             response["definition"],
         )

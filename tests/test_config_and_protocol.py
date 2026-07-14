@@ -18,6 +18,48 @@ class MemoryProtector:
 
 
 class ConfigStoreTests(unittest.TestCase):
+    def test_saves_and_exposes_named_section_settings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            section = Path(temp_dir) / "sections.md"
+            append = Path(temp_dir) / "append.md"
+            section.write_text("## 阅读\n\n## Match Review\n", encoding="utf-8")
+            append.write_text("", encoding="utf-8")
+            store = ConfigStore(Path(temp_dir) / "config.json", MemoryProtector())
+
+            store.save(
+                AppConfig(
+                    str(section), str(append), "Match Review", "appid", "secret"
+                )
+            )
+            config = store.load()
+            public = store.public_settings()
+
+            self.assertEqual(str(section.resolve()), config.section_file)
+            self.assertEqual(str(append.resolve()), config.append_file)
+            self.assertEqual("Match Review", config.selected_section)
+            self.assertEqual(["阅读", "Match Review"], public["sections"])
+            self.assertEqual("Match Review", public["selectedSection"])
+            self.assertEqual(str(section.resolve()), public["sectionFile"])
+            self.assertEqual(str(append.resolve()), public["appendFile"])
+            self.assertEqual("ecdict", config.dictionary_id)
+            self.assertEqual("ecdict", public["activeDictionary"])
+
+    def test_persists_selected_dictionary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            section = Path(temp_dir) / "sections.md"
+            append = Path(temp_dir) / "append.md"
+            section.write_text("## 阅读\n", encoding="utf-8")
+            append.write_text("", encoding="utf-8")
+            store = ConfigStore(Path(temp_dir) / "config.json", MemoryProtector())
+
+            store.save(AppConfig(
+                str(section), str(append), "阅读", "appid", "secret",
+                dictionary_id="kaikki-en",
+            ))
+
+            self.assertEqual("kaikki-en", store.load().dictionary_id)
+            self.assertEqual("kaikki-en", store.public_settings()["activeDictionary"])
+
     def test_credentials_are_protected_and_never_returned_in_public_settings(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             chapter = Path(temp_dir) / "chapter.md"
@@ -65,8 +107,12 @@ class ConfigStoreTests(unittest.TestCase):
             )
 
             config = ConfigStore(path, protector).load()
+            self.assertEqual(str(chapter.resolve()), config.section_file)
+            self.assertEqual(str(news.resolve()), config.append_file)
+            self.assertEqual("Chapter 22", config.selected_section)
             self.assertEqual("", config.youdao_app_key)
             self.assertEqual("", config.youdao_secret_key)
+            self.assertEqual("ecdict", config.dictionary_id)
 
     def test_rejects_non_markdown_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:

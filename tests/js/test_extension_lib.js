@@ -9,10 +9,76 @@ function eventChannel() {
   };
 }
 
-assert.deepStrictEqual(ui.menuTitles({ selectedChapter: 22 }), {
-  chapter: "加入 Chapter 22",
-  news: "加入 NEWS",
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }), {
+  section: "加入 Match Review",
+  append: "添加到笔记末尾",
 });
+assert.deepStrictEqual(ui.menuTitles({ selectedSection: "Match Review" }, "plain"), {
+  section: "加入 Match Review（明文）",
+  append: "添加到笔记末尾（明文）",
+});
+assert.strictEqual(ui.normalizeMeaningStyle("plain"), "plain");
+assert.strictEqual(ui.normalizeMeaningStyle("covered"), "covered");
+assert.strictEqual(ui.normalizeMeaningStyle("unexpected"), "covered");
+assert.strictEqual(ui.meaningStyleBadge("plain"), "明");
+assert.strictEqual(ui.meaningStyleBadge("covered"), "");
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "add_entry", target: "append", text: "word" }, "plain"),
+  { action: "add_entry", target: "append", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "create_section_and_add_entry", text: "word" }, "plain"),
+  { action: "create_section_and_add_entry", text: "word", meaningStyle: "plain" },
+);
+assert.deepStrictEqual(
+  ui.withMeaningStyle({ action: "lookup_definition", text: "word" }, "plain"),
+  { action: "lookup_definition", text: "word" },
+);
+assert.deepStrictEqual(ui.normalizeSettings({
+  chapterFile: "chapter.md",
+  newsFile: "news.md",
+  selectedChapter: 22,
+  chapters: [21, 22],
+}), {
+  sectionFile: "chapter.md",
+  appendFile: "news.md",
+  selectedSection: "Chapter 22",
+  sections: ["Chapter 21", "Chapter 22"],
+  activeDictionary: "ecdict",
+  dictionaries: [],
+});
+
+assert.deepStrictEqual(ui.normalizeSettings({
+  selectedSection: "阅读",
+  activeDictionary: "kaikki-en",
+  dictionaries: [
+    { id: "ecdict", name: "ECDICT", installed: true },
+    { id: "kaikki-en", name: "Kaikki English", installed: false },
+  ],
+}), {
+  sectionFile: "",
+  appendFile: "",
+  selectedSection: "阅读",
+  sections: [],
+  activeDictionary: "kaikki-en",
+  dictionaries: [
+    { id: "ecdict", name: "ECDICT", installed: true },
+    { id: "kaikki-en", name: "Kaikki English", installed: false },
+  ],
+});
+assert.strictEqual(ui.dictionarySourceLabel({ sourceName: "Kaikki English" }), "Kaikki English");
+assert.strictEqual(ui.dictionarySourceLabel({ source: "baidu" }), "百度翻译");
+assert.strictEqual(ui.dictionarySourceLabel({ sourceId: "ecdict" }), "ECDICT");
+const optionsUrl = "chrome-extension://extension-id/options.html";
+assert.strictEqual(ui.canForwardNativeAction(
+  "open_dictionary_manager", optionsUrl, optionsUrl,
+), true);
+assert.strictEqual(ui.canForwardNativeAction(
+  "open_dictionary_manager", "https://example.com/article", optionsUrl,
+), false);
+assert.strictEqual(ui.canForwardNativeAction(
+  "lookup_definition", "https://example.com/article", optionsUrl,
+), true);
 
 assert.strictEqual(ui.notificationFor({ ok: true, status: "added" }), null);
 assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "duplicate", message: "已存在" }), {
@@ -26,6 +92,52 @@ assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "lookup_failed", 
 
 assert.strictEqual(ui.safeMessage({ message: "ok" }), "ok");
 assert.strictEqual(ui.safeMessage({ message: "a".repeat(500) }).length, 200);
+
+assert.strictEqual(typeof ui.shouldDismissPopover, "function");
+const popoverHost = { contains: (target) => target === popoverHost };
+const outsideTarget = {};
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "scroll", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [{}, popoverHost, outsideTarget] },
+  popoverHost,
+  null,
+), false);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  null,
+), true);
+
+assert.strictEqual(typeof ui.shouldHandleSelectionEvent, "function");
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [{}, popoverHost] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "mouseup", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), true);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  true,
+), false);
+assert.strictEqual(ui.shouldHandleSelectionEvent(
+  { type: "selectionchange", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  false,
+), true);
+assert.strictEqual(ui.shouldDismissPopover(
+  { type: "mousedown", target: outsideTarget, composedPath: () => [outsideTarget] },
+  popoverHost,
+  { tagName: "SELECT" },
+), true);
 
 assert.strictEqual(
   ui.formatTranslationPreview({
@@ -144,4 +256,25 @@ async function testNativeClient() {
   assert.strictEqual(ports.length, 2);
 }
 
-testNativeClient().then(() => console.log("extension lib tests passed"));
+async function testMeaningBadgeController() {
+  let meaningStyle = "covered";
+  let scheduled = null;
+  const badges = [];
+  const controller = ui.createMeaningBadgeController({
+    readStyle: async () => meaningStyle,
+    setBackground: async (color) => badges.push({ kind: "color", value: color }),
+    setText: async (value) => badges.push({ kind: "text", value }),
+    setTimer: (callback) => { scheduled = callback; },
+  });
+
+  await controller.sync();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "" });
+  await controller.showSuccess();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "✓" });
+  meaningStyle = "plain";
+  await scheduled();
+  assert.deepStrictEqual(badges.at(-1), { kind: "text", value: "明" });
+}
+
+Promise.all([testNativeClient(), testMeaningBadgeController()])
+  .then(() => console.log("extension lib tests passed"));

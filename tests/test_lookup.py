@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from clipper.dictionary import DictionaryLookup, LookupNotFound
+from clipper.dictionary_schema import create_pack_schema, write_pack_metadata
 from clipper.translator import BaiduTranslateError, BaiduTranslator
 from clipper.youdao import YoudaoTranslateError, YoudaoTranslator
 
@@ -13,17 +14,33 @@ class DictionaryLookupTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "dict.db"
         connection = sqlite3.connect(self.db_path)
-        connection.executescript(
-            """
-            CREATE TABLE entries (word TEXT PRIMARY KEY COLLATE NOCASE, phonetic TEXT, translation TEXT);
-            CREATE TABLE lemmas (variant TEXT PRIMARY KEY COLLATE NOCASE, lemma TEXT NOT NULL);
-            INSERT INTO entries VALUES ('run', 'rʌn', '跑');
-            INSERT INTO entries VALUES ('old school', 'əʊld skuːl', '守旧派');
-            INSERT INTO entries VALUES ('circumvent', 'ˌsɜːkəmˈvent', 'vt. 绕行, 陷害, 包围, 智取');
-            INSERT INTO entries VALUES ('circumvents', 'ˌsɜːkəmˈvents', 'n. 环绕\nvt. 规避');
-            INSERT INTO lemmas VALUES ('running', 'run');
-            INSERT INTO lemmas VALUES ('circumvents', 'circumvent');
-            """
+        create_pack_schema(connection)
+        write_pack_metadata(connection, {
+            "id": "fixture", "name": "Fixture Dictionary",
+            "source_language": "en", "target_language": "zh-Hans",
+        })
+        connection.executemany(
+            "INSERT INTO entries(word, phonetic, definition, translation, pos, metadata_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("run", "rʌn", "move swiftly", "v. 跑", "verb", '{"tag":"cet4"}'),
+                ("old school", "əʊld skuːl", "traditional", "守旧派", "noun", "{}"),
+                ("circumvent", "ˌsɜːkəmˈvent", "avoid", "vt. 绕行, 陷害, 包围, 智取", "verb", "{}"),
+                ("circumvents", "ˌsɜːkəmˈvents", "surrounds", "n. 环绕\nvt. 规避", "verb", "{}"),
+            ],
+        )
+        run_id = connection.execute("SELECT id FROM entries WHERE word='run'").fetchone()[0]
+        sense_id = connection.execute(
+            "INSERT INTO senses(entry_id, position, part_of_speech, gloss, translated_gloss, tags) "
+            "VALUES (?, 0, 'verb', 'move swiftly', '跑', 'intransitive')", (run_id,)
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO examples(sense_id, position, text) VALUES (?, 0, 'She runs daily.')",
+            (sense_id,),
+        )
+        connection.executemany(
+            "INSERT INTO forms(form, lemma) VALUES (?, ?)",
+            [("running", "run"), ("circumvents", "circumvent")],
         )
         connection.commit()
         connection.close()
@@ -39,6 +56,16 @@ class DictionaryLookupTests(unittest.TestCase):
         result = DictionaryLookup(self.db_path).lookup("running")
         self.assertEqual("run", result.matched_word)
 
+    def test_returns_pack_source_structured_senses_examples_and_metadata(self):
+        result = DictionaryLookup(self.db_path).lookup("run")
+        self.assertEqual("fixture", result.source_id)
+        self.assertEqual("Fixture Dictionary", result.source_name)
+        self.assertEqual("move swiftly", result.definition)
+        self.assertEqual("verb", result.senses[0].part_of_speech)
+        self.assertEqual("跑", result.senses[0].translated_gloss)
+        self.assertEqual("She runs daily.", result.examples[0].text)
+        self.assertEqual("cet4", result.metadata["tag"])
+
     def test_inflected_word_keeps_exact_phonetic_and_uses_lemma_translation(self):
         result = DictionaryLookup(self.db_path).lookup("circumvents")
         self.assertEqual("ˌsɜːkəmˈvents", result.phonetic)
@@ -47,7 +74,9 @@ class DictionaryLookupTests(unittest.TestCase):
     def test_missing_phonetic_is_not_accepted(self):
         connection = sqlite3.connect(self.db_path)
         try:
-            connection.execute("INSERT INTO entries VALUES ('silent', '', '无声')")
+            connection.execute(
+                "INSERT INTO entries(word, phonetic, translation) VALUES ('silent', '', '无声')"
+            )
             connection.commit()
         finally:
             connection.close()

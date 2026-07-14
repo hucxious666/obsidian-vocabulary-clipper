@@ -7,3 +7,8 @@ venv/
 *.log
 config.json
 backups/
+data/dictionaries/
+data/**/*.sqlite3
+data/**/*.csv
+data/**/*.jsonl
+data/**/*.jsonl.gz

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .markdown_writer import find_chapters
+from .markdown_writer import find_sections, normalize_section_name
 
 
 class SettingsValidationError(ValueError):
@@ -19,13 +20,39 @@ class Protector(Protocol):
 
 @dataclass(frozen=True)
 class AppConfig:
-    chapter_file: str
-    news_file: str
-    selected_chapter: int
+    section_file: str
+    append_file: str
+    selected_section: str
     app_id: str
     secret_key: str
     youdao_app_key: str = ""
     youdao_secret_key: str = ""
+    dictionary_id: str = "ecdict"
+
+    def __post_init__(self) -> None:
+        selected = (
+            f"Chapter {int(self.selected_section)}"
+            if isinstance(self.selected_section, int)
+            else normalize_section_name(self.selected_section)
+        )
+        object.__setattr__(self, "selected_section", selected)
+        dictionary_id = str(self.dictionary_id or "ecdict").strip()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,49}", dictionary_id):
+            raise ValueError("词典标识无效")
+        object.__setattr__(self, "dictionary_id", dictionary_id)
+
+    @property
+    def chapter_file(self) -> str:
+        return self.section_file
+
+    @property
+    def news_file(self) -> str:
+        return self.append_file
+
+    @property
+    def selected_chapter(self) -> int:
+        prefix = "Chapter "
+        return int(self.selected_section[len(prefix):]) if self.selected_section.startswith(prefix) else 0
 
 
 class ConfigStore:
@@ -39,28 +66,40 @@ class ConfigStore:
             raise SettingsValidationError("请选择现有的 Markdown 文件")
         return path.resolve()
 
-    def _chapters(self, path: Path) -> list[int]:
+    def _sections(self, path: Path) -> list[str]:
         try:
             data = path.read_bytes()
             text = data.decode("utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8")
         except UnicodeError as error:
             raise SettingsValidationError("Markdown 文件必须使用 UTF-8 编码") from error
-        return find_chapters(text)
+        return find_sections(text)
+
+    def _chapters(self, path: Path) -> list[int]:
+        return [
+            int(name.removeprefix("Chapter "))
+            for name in self._sections(path)
+            if name.startswith("Chapter ") and name.removeprefix("Chapter ").isdigit()
+        ]
 
     def save(self, config: AppConfig) -> None:
-        chapter_file = self.validate_path(config.chapter_file)
-        news_file = self.validate_path(config.news_file)
-        chapters = self._chapters(chapter_file)
-        if int(config.selected_chapter) not in chapters:
-            raise SettingsValidationError("所选 Chapter 不存在")
+        section_file = self.validate_path(config.section_file)
+        append_file = self.validate_path(config.append_file)
+        sections = self._sections(section_file)
+        selected = next(
+            (name for name in sections if name.casefold() == config.selected_section.casefold()),
+            None,
+        )
+        if selected is None:
+            raise SettingsValidationError("所选章节不存在")
         if not config.app_id.strip() or not config.secret_key.strip():
             raise SettingsValidationError("百度 APP ID 和密钥不能为空")
         if bool(config.youdao_app_key.strip()) != bool(config.youdao_secret_key.strip()):
             raise SettingsValidationError("有道 App Key 和 App Secret 必须同时填写")
         payload = {
-            "chapter_file": str(chapter_file),
-            "news_file": str(news_file),
-            "selected_chapter": int(config.selected_chapter),
+            "section_file": str(section_file),
+            "append_file": str(append_file),
+            "selected_section": selected,
+            "dictionary_id": config.dictionary_id,
             "credentials": {
                 "id": self.protector.protect(config.app_id.strip()),
                 "key": self.protector.protect(config.secret_key.strip()),
@@ -82,29 +121,42 @@ class ConfigStore:
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         credentials = payload.get("credentials") or {}
         youdao_credentials = payload.get("youdao_credentials") or {}
+        selected = payload.get("selected_section")
+        if not selected:
+            selected = f"Chapter {int(payload.get('selected_chapter', 0))}"
         return AppConfig(
-            chapter_file=str(self.validate_path(payload.get("chapter_file", ""))),
-            news_file=str(self.validate_path(payload.get("news_file", ""))),
-            selected_chapter=int(payload.get("selected_chapter", 0)),
+            section_file=str(
+                self.validate_path(payload.get("section_file") or payload.get("chapter_file", ""))
+            ),
+            append_file=str(
+                self.validate_path(payload.get("append_file") or payload.get("news_file", ""))
+            ),
+            selected_section=str(selected),
             app_id=self.protector.unprotect(credentials.get("id", "")),
             secret_key=self.protector.unprotect(credentials.get("key", "")),
             youdao_app_key=self._unprotect_optional(youdao_credentials.get("id", "")),
             youdao_secret_key=self._unprotect_optional(youdao_credentials.get("key", "")),
+            dictionary_id=str(payload.get("dictionary_id") or "ecdict"),
         )
 
     def public_settings(self) -> dict:
         config = self.load()
-        chapter_path = Path(config.chapter_file)
-        chapters = self._chapters(chapter_path)
+        section_path = Path(config.section_file)
+        sections = self._sections(section_path)
         return {
-            "chapterFile": config.chapter_file,
-            "newsFile": config.news_file,
+            "sectionFile": config.section_file,
+            "appendFile": config.append_file,
+            "selectedSection": config.selected_section,
+            "sections": sections,
+            "chapterFile": config.section_file,
+            "newsFile": config.append_file,
             "selectedChapter": config.selected_chapter,
-            "chapters": chapters,
+            "chapters": self._chapters(section_path),
             "credentialsConfigured": bool(config.app_id and config.secret_key),
             "youdaoCredentialsConfigured": bool(
                 config.youdao_app_key and config.youdao_secret_key
             ),
+            "activeDictionary": config.dictionary_id,
         }
 
     def _unprotect_optional(self, value: str) -> str:

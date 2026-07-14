@@ -69,21 +69,29 @@
   }
 
   window.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     lastPointer = { clientX: event.clientX, clientY: event.clientY };
   }, true);
 
-  document.addEventListener("selectionchange", () => {
+  document.addEventListener("selectionchange", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
     queueLookup(lastPointer, () => window.getSelection(), 200);
   }, true);
 
   window.addEventListener("mouseup", (event) => {
-    if (event.button !== 0) return;
+    if (
+      event.button !== 0
+      || !ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())
+    ) return;
     const point = { clientX: event.clientX, clientY: event.clientY };
     queueLookup(point, () => window.getSelection());
   }, true);
 
   window.addEventListener("dblclick", (event) => {
+    if (!ClipperUi.shouldHandleSelectionEvent(event, popover.host, popover.isOpen())) return;
     const point = { clientX: event.clientX, clientY: event.clientY };
     queueLookup(point, () => selectionAtPoint(point));
   }, true);

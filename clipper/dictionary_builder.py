@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+from .dictionary_schema import create_pack_schema, write_pack_metadata
 
 
 _VARIANT_CODES = {"p", "d", "i", "3", "r", "t", "s"}
@@ -26,22 +30,35 @@ def _exchange_pairs(word: str, exchange: str):
                     yield variant.strip(), word
 
 
-def _create_schema(connection: sqlite3.Connection) -> None:
-    connection.executescript(
-        """
-        PRAGMA journal_mode=OFF;
-        PRAGMA synchronous=OFF;
-        CREATE TABLE entries (
-            word TEXT PRIMARY KEY COLLATE NOCASE,
-            phonetic TEXT NOT NULL,
-            translation TEXT NOT NULL
-        );
-        CREATE TABLE lemmas (
-            variant TEXT PRIMARY KEY COLLATE NOCASE,
-            lemma TEXT NOT NULL
-        );
-        """
+_METADATA_FIELDS = ("collins", "oxford", "tag", "bnc", "frq", "exchange", "detail", "audio")
+
+
+def _entry_values(row: dict[str, str]) -> tuple[str, ...]:
+    metadata = {field: (row.get(field) or "").strip() for field in _METADATA_FIELDS}
+    return (
+        (row.get("word") or "").strip(),
+        (row.get("phonetic") or "").strip(),
+        (row.get("definition") or "").strip(),
+        (row.get("translation") or "").strip(),
+        (row.get("pos") or "").strip(),
+        json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
     )
+
+
+def _insert_row(connection: sqlite3.Connection, row: dict[str, str]) -> bool:
+    values = _entry_values(row)
+    if not values[0]:
+        return False
+    connection.execute(
+        "INSERT OR REPLACE INTO entries"
+        "(word, phonetic, definition, translation, pos, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+        values,
+    )
+    for variant, lemma in _exchange_pairs(values[0], row.get("exchange") or ""):
+        connection.execute(
+            "INSERT OR IGNORE INTO forms(form, lemma) VALUES (?, ?)", (variant, lemma)
+        )
+    return True
 
 
 def build_database(csv_path: Path, database_path: Path) -> int:
@@ -53,21 +70,20 @@ def build_database(csv_path: Path, database_path: Path) -> int:
     connection = sqlite3.connect(temporary)
     count = 0
     try:
-        _create_schema(connection)
+        create_pack_schema(connection)
+        write_pack_metadata(connection, {
+            "id": "ecdict",
+            "name": "ECDICT 完整字段版",
+            "source_language": "en",
+            "target_language": "zh-Hans",
+            "source_format": "ecdict_csv",
+            "built_at": datetime.now(timezone.utc).isoformat(),
+        })
         with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
-                word = (row.get("word") or "").strip()
-                if not word:
+                if not _insert_row(connection, row):
                     continue
-                connection.execute(
-                    "INSERT OR REPLACE INTO entries(word, phonetic, translation) VALUES (?, ?, ?)",
-                    (word, (row.get("phonetic") or "").strip(), (row.get("translation") or "").strip()),
-                )
-                for variant, lemma in _exchange_pairs(word, row.get("exchange") or ""):
-                    connection.execute(
-                        "INSERT OR IGNORE INTO lemmas(variant, lemma) VALUES (?, ?)", (variant, lemma)
-                    )
                 count += 1
                 if count % 20_000 == 0:
                     connection.commit()

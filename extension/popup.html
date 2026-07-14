@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>释义写入方式</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <span class="mark">W</span>
+      <div><h1>释义写入方式</h1><p>切换后持续生效</p></div>
+    </header>
+
+    <fieldset>
+      <legend>选择写入方式</legend>
+      <div class="mode-options">
+        <label>
+          <input type="radio" name="meaning-style" value="covered">
+          <span>遮蔽释义</span>
+        </label>
+        <label>
+          <input type="radio" name="meaning-style" value="plain">
+          <span>明文释义</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <p class="scope">当前章节：<strong id="current-section">正在读取…</strong></p>
+    <p id="mode-hint" class="hint" role="status"></p>
+    <p class="note">对章节、笔记末尾和“新建并加入”均生效。</p>
+    <button id="open-options" type="button">打开完整设置</button>
+  </main>
+  <script src="lib.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

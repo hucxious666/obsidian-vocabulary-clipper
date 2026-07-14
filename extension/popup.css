@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #202937;
+  background: #f6f7f9;
+}
+* { box-sizing: border-box; }
+body { width: 300px; margin: 0; }
+main { padding: 18px; }
+header { display: flex; align-items: center; gap: 11px; }
+.mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: white;
+  background: #6f55d9;
+  font-weight: 700;
+}
+h1, p { margin: 0; }
+h1 { font-size: 16px; }
+header p { margin-top: 2px; color: #687386; font-size: 11px; }
+fieldset { margin: 16px 0 12px; padding: 0; border: 0; }
+legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.mode-options { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 10px; background: #e7e9ee; }
+.mode-options label { cursor: pointer; }
+.mode-options input { position: absolute; opacity: 0; pointer-events: none; }
+.mode-options span { display: grid; place-items: center; min-height: 36px; border-radius: 8px; font-size: 13px; font-weight: 600; }
+.mode-options input:checked + span { color: #5138b0; background: white; box-shadow: 0 1px 5px rgba(31, 39, 51, .14); }
+.mode-options input:focus-visible + span { outline: 2px solid #735edb; outline-offset: 1px; }
+.scope { color: #475467; font-size: 12px; }
+.scope strong { color: #273244; }
+.hint { min-height: 18px; margin-top: 8px; color: #6f55d9; font-size: 12px; font-weight: 600; }
+.note { color: #7a8494; font-size: 11px; line-height: 1.5; }
+button { width: 100%; min-height: 36px; margin-top: 14px; border: 1px solid #ccd2da; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+button:hover { border-color: #735edb; color: #5138b0; }
+@media (prefers-color-scheme: dark) {
+  :root { color: #e8ebf1; background: #202630; }
+  header p, .note { color: #aab2bf; }
+  .mode-options { background: #343c48; }
+  .mode-options input:checked + span { color: #ded7ff; background: #4a3b78; }
+  .scope { color: #c1c7d0; }
+  .scope strong { color: #f0f2f5; }
+  button { border-color: #4c5665; }
+}

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 from clipper.config import ConfigStore
 from clipper.dpapi import DpapiProtector
+from clipper.dictionary_repository import DictionaryRepository
 from clipper.protocol import read_message, write_message
 from clipper.service import ClipperService
 
@@ -43,6 +45,22 @@ def create_service() -> ClipperService:
         app_root / "data" / "ecdict.sqlite3",
         data_root / "backups",
         file_picker=choose_markdown_file,
+        dictionary_repository=DictionaryRepository(
+            app_root / "data" / "dictionaries", app_root / "dictionary-catalog.json"
+        ),
+        dictionary_manager_launcher=lambda: open_dictionary_manager(
+            app_root / "dictionary-manager.ps1"
+        ),
+    )
+
+
+def open_dictionary_manager(script_path: Path) -> None:
+    subprocess.Popen(
+        [
+            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden", "-File", str(script_path),
+        ],
+        cwd=script_path.parent,
     )
 
 

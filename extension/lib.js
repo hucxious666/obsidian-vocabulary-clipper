@@ -5,14 +5,102 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  function menuTitles(settings) {
-    const chapter = Number(settings && settings.selectedChapter) || 22;
-    return { chapter: `加入 Chapter ${chapter}`, news: "加入 NEWS" };
+  function normalizeSettings(settings) {
+    const value = settings || {};
+    const selectedSection = value.selectedSection
+      || `Chapter ${Number(value.selectedChapter) || 22}`;
+    const sections = Array.isArray(value.sections)
+      ? value.sections.map(String)
+      : (value.chapters || []).map((chapter) => `Chapter ${chapter}`);
+    const dictionaries = Array.isArray(value.dictionaries)
+      ? value.dictionaries.map((dictionary) => ({
+        id: String(dictionary.id || ""),
+        name: String(dictionary.name || dictionary.id || "离线词典"),
+        installed: Boolean(dictionary.installed),
+      }))
+      : [];
+    return {
+      sectionFile: value.sectionFile || value.chapterFile || "",
+      appendFile: value.appendFile || value.newsFile || "",
+      selectedSection,
+      sections,
+      activeDictionary: String(value.activeDictionary || value.dictionaryId || "ecdict"),
+      dictionaries,
+    };
+  }
+
+  function dictionarySourceLabel(definition) {
+    const value = definition || {};
+    if (value.sourceName) return String(value.sourceName);
+    const source = value.sourceId || value.source;
+    if (source === "baidu") return "百度翻译";
+    if (source === "kaikki-en") return "Kaikki English";
+    if (source === "ecdict") return "ECDICT";
+    return "离线词典";
+  }
+
+  function normalizeMeaningStyle(value) {
+    return value === "plain" ? "plain" : "covered";
+  }
+
+  function meaningStyleBadge(value) {
+    return normalizeMeaningStyle(value) === "plain" ? "明" : "";
+  }
+
+  function createMeaningBadgeController(options) {
+    const setTimer = options.setTimer || ((callback, delay) => setTimeout(callback, delay));
+    async function sync() {
+      await options.setBackground("#c05a16");
+      await options.setText(meaningStyleBadge(await options.readStyle()));
+    }
+    async function showSuccess() {
+      await options.setBackground("#16803a");
+      await options.setText("✓");
+      setTimer(() => sync(), 1600);
+    }
+    return { showSuccess, sync };
+  }
+
+  function withMeaningStyle(payload, value) {
+    const writeActions = new Set(["add_entry", "create_section_and_add_entry"]);
+    return writeActions.has(payload && payload.action)
+      ? { ...payload, meaningStyle: normalizeMeaningStyle(value) }
+      : payload;
+  }
+
+  function canForwardNativeAction(action, senderUrl, optionsUrl) {
+    return action !== "open_dictionary_manager" || senderUrl === optionsUrl;
+  }
+
+  function menuTitles(settings, meaningStyle = "covered") {
+    const value = normalizeSettings(settings);
+    const suffix = normalizeMeaningStyle(meaningStyle) === "plain" ? "（明文）" : "";
+    return {
+      section: `加入 ${value.selectedSection}${suffix}`,
+      append: `添加到笔记末尾${suffix}`,
+    };
   }
 
   function safeMessage(response) {
     const value = response && typeof response.message === "string" ? response.message : "操作失败";
     return value.slice(0, 200);
+  }
+
+  function eventOccursWithin(event, host) {
+    const path = event && typeof event.composedPath === "function" ? event.composedPath() : [];
+    return path.includes(host) || host.contains(event && event.target);
+  }
+
+  function shouldDismissPopover(event, host, activeElement) {
+    if (event && event.type === "scroll" && activeElement && activeElement.tagName === "SELECT") {
+      return false;
+    }
+    return !eventOccursWithin(event, host);
+  }
+
+  function shouldHandleSelectionEvent(event, host, popoverOpen) {
+    if (event && event.type === "selectionchange") return !popoverOpen;
+    return !eventOccursWithin(event, host);
   }
 
   function notificationFor(response) {
@@ -173,18 +261,27 @@
 
   return {
     addPdfBypass,
+    canForwardNativeAction,
     classifySelection,
+    createMeaningBadgeController,
     createSelectionDispatcher,
     createNativeClient,
+    dictionarySourceLabel,
     formatTranslationPreview,
     hasPdfBypass,
     isSafePdfSource,
+    meaningStyleBadge,
     menuTitles,
+    normalizeMeaningStyle,
+    normalizeSettings,
     normalizeLookupText,
     notificationFor,
     positionPopover,
     safeMessage,
+    shouldDismissPopover,
+    shouldHandleSelectionEvent,
     shouldRedirectPdf,
+    withMeaningStyle,
     wordAtOffset,
   };
 });
