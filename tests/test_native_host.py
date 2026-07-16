@@ -1,8 +1,11 @@
 import io
+import subprocess
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from clipper.protocol import read_message, write_message
-from native_host import ALLOWED_ORIGIN, is_allowed_origin, serve_messages
+from native_host import ALLOWED_ORIGIN, is_allowed_origin, open_dictionary_manager, serve_messages
 
 
 class NativeHostOriginTests(unittest.TestCase):
@@ -34,6 +37,21 @@ class NativeHostOriginTests(unittest.TestCase):
             read_message(outgoing),
         )
         self.assertIsNone(read_message(outgoing))
+
+    @patch("native_host._manager_python", return_value=Path("C:/Python/pythonw.exe"))
+    @patch("native_host.subprocess.Popen")
+    def test_dictionary_manager_starts_directly_as_visible_gui(self, popen, _python):
+        app_root = Path("C:/clipper")
+
+        open_dictionary_manager(app_root)
+
+        command = popen.call_args.args[0]
+        self.assertEqual("pythonw.exe", Path(command[0]).name)
+        self.assertEqual("clipper.dictionary_manager_gui", command[2])
+        self.assertNotIn("powershell.exe", command)
+        self.assertNotIn("Hidden", command)
+        self.assertEqual(app_root, popen.call_args.kwargs["cwd"])
+        self.assertEqual(subprocess.DEVNULL, popen.call_args.kwargs["stdout"])
 
 
 if __name__ == "__main__":

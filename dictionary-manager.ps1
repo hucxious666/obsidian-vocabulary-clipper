@@ -11,7 +11,11 @@ else {
     $pythonPath = (Get-Command python -ErrorAction Stop).Source
 }
 
-& $pythonPath -m clipper.dictionary_manager_gui `
-    --catalog (Join-Path $root 'dictionary-catalog.json') `
-    --target (Join-Path $root 'data\dictionaries')
-exit $LASTEXITCODE
+$pythonwPath = Join-Path (Split-Path -Parent $pythonPath) 'pythonw.exe'
+$managerPython = if (Test-Path -LiteralPath $pythonwPath) { $pythonwPath } else { $pythonPath }
+$catalog = '"{0}"' -f (Join-Path $root 'dictionary-catalog.json')
+$target = '"{0}"' -f (Join-Path $root 'data\dictionaries')
+Start-Process -FilePath $managerPython -WorkingDirectory $root -ArgumentList @(
+    '-m', 'clipper.dictionary_manager_gui', '--catalog', $catalog, '--target', $target
+)
+exit 0

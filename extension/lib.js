@@ -72,6 +72,12 @@
     return action !== "open_dictionary_manager" || senderUrl === optionsUrl;
   }
 
+  function nativeProtocolMismatch(response, expectedVersion) {
+    if (!response) return false;
+    if (response.ok) return Number(response.protocolVersion) !== expectedVersion;
+    return response.status === "invalid" && response.message === "不支持的操作";
+  }
+
   function menuTitles(settings, meaningStyle = "covered") {
     const value = normalizeSettings(settings);
     const suffix = normalizeMeaningStyle(meaningStyle) === "plain" ? "（明文）" : "";
@@ -272,6 +278,7 @@
     isSafePdfSource,
     meaningStyleBadge,
     menuTitles,
+    nativeProtocolMismatch,
     normalizeMeaningStyle,
     normalizeSettings,
     normalizeLookupText,

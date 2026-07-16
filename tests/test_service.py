@@ -123,6 +123,7 @@ class ClipperServiceTests(unittest.TestCase):
     def test_settings_expose_dictionary_status_and_selected_pack(self):
         response = self.service.handle({"action": "get_settings"})
 
+        self.assertEqual(2, response["protocolVersion"])
         self.assertEqual("ecdict", response["activeDictionary"])
         self.assertEqual("Kaikki English", response["dictionaries"][1]["name"])
         self.assertTrue(response["dictionaries"][1]["installed"])

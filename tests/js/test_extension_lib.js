@@ -79,6 +79,14 @@ assert.strictEqual(ui.canForwardNativeAction(
 assert.strictEqual(ui.canForwardNativeAction(
   "lookup_definition", "https://example.com/article", optionsUrl,
 ), true);
+assert.strictEqual(ui.nativeProtocolMismatch({ ok: true, protocolVersion: 2 }, 2), false);
+assert.strictEqual(ui.nativeProtocolMismatch({ ok: true }, 2), true);
+assert.strictEqual(ui.nativeProtocolMismatch({
+  ok: false, status: "invalid", message: "不支持的操作",
+}, 2), true);
+assert.strictEqual(ui.nativeProtocolMismatch({
+  ok: false, status: "write_failed", message: "连接失败",
+}, 2), false);
 
 assert.strictEqual(ui.notificationFor({ ok: true, status: "added" }), null);
 assert.deepStrictEqual(ui.notificationFor({ ok: false, status: "duplicate", message: "已存在" }), {

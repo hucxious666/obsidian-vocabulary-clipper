@@ -33,7 +33,7 @@ class InstallLayoutTests(unittest.TestCase):
     def test_version_lookup_permissions_and_controls_are_packaged(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
         options = (ROOT / "extension" / "options.html").read_text(encoding="utf-8")
-        self.assertEqual("1.6.0", manifest["version"])
+        self.assertEqual("1.6.1", manifest["version"])
         self.assertEqual(["http://*/*", "https://*/*", "file:///*"], manifest["host_permissions"])
         scripts = manifest["content_scripts"][0]
         self.assertEqual(
@@ -67,6 +67,7 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertIn('activeDictionary: elements.dictionary.value', options_script)
         self.assertIn('action: "select_dictionary"', options_script)
         self.assertIn('elements.dictionary.addEventListener("change", selectDictionary)', options_script)
+        self.assertIn("chrome.runtime.reload()", options_script)
         self.assertIn("ClipperUi.canForwardNativeAction", background)
         self.assertNotIn('action: "test_youdao_dictionary"', options_script)
         viewer = (ROOT / "extension" / "viewer.html").read_text(encoding="utf-8")
@@ -78,7 +79,13 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertTrue((ROOT / "dictionary-manager.ps1").is_file())
         self.assertTrue((ROOT / "clipper" / "dictionary_manager_gui.py").is_file())
         manager = (ROOT / "clipper" / "dictionary_manager_gui.py").read_text(encoding="utf-8")
-        self.assertIn('installation_lock("dictionary-manager-gui")', manager)
+        native_host = (ROOT / "native_host.py").read_text(encoding="utf-8")
+        manager_script = (ROOT / "dictionary-manager.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('installation_lock("dictionary-manager-gui-v2")', manager)
+        self.assertIn("focus_existing_manager()", manager)
+        self.assertIn("pythonw.exe", native_host)
+        self.assertIn("pythonw.exe", manager_script)
+        self.assertNotIn('"-WindowStyle", "Hidden"', native_host)
 
     def test_toolbar_popup_exposes_persistent_meaning_style_control(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))

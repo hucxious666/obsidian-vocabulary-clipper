@@ -18,6 +18,7 @@ from .markdown_writer import (
     restore_bytes_atomic,
     write_entry_atomic,
 )
+from .protocol import NATIVE_PROTOCOL_VERSION
 from .selection import InvalidSelection, normalize_selection
 from .translator import BaiduTranslateError, BaiduTranslator
 from .translation_service import preview_youdao, translate_selection
@@ -34,8 +35,7 @@ class ClipperService:
         "lookup_definition",
         "translate_selection",
         "add_entry",
-        "select_section",
-        "create_section", "create_section_and_add_entry",
+        "select_section", "create_section", "create_section_and_add_entry",
         "open_dictionary_manager", "select_dictionary",
     }
 
@@ -276,12 +276,12 @@ class ClipperService:
 
     def _public_settings(self) -> dict:
         settings = self.config_store.public_settings()
+        settings["protocolVersion"] = NATIVE_PROTOCOL_VERSION
         if self.dictionary_repository:
             settings["dictionaries"] = self.dictionary_repository.list_packs()
         else:
-            settings["dictionaries"] = [
-                {"id": "ecdict", "name": "ECDICT", "installed": self.dictionary_path.is_file()}
-            ]
+            settings["dictionaries"] = [{
+                "id": "ecdict", "name": "ECDICT", "installed": self.dictionary_path.is_file()}]
         return settings
 
     def _open_dictionary_manager(self) -> dict:

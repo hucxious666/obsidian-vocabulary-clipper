@@ -4,6 +4,7 @@ from typing import BinaryIO
 
 
 MAX_MESSAGE_BYTES = 1_048_576
+NATIVE_PROTOCOL_VERSION = 2
 
 
 def read_message(stream: BinaryIO) -> dict | None:
@@ -31,4 +32,3 @@ def write_message(stream: BinaryIO, message: dict) -> None:
     stream.write(struct.pack("<I", len(payload)))
     stream.write(payload)
     stream.flush()
-

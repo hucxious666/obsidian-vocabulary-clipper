@@ -48,19 +48,27 @@ def create_service() -> ClipperService:
         dictionary_repository=DictionaryRepository(
             app_root / "data" / "dictionaries", app_root / "dictionary-catalog.json"
         ),
-        dictionary_manager_launcher=lambda: open_dictionary_manager(
-            app_root / "dictionary-manager.ps1"
-        ),
+        dictionary_manager_launcher=lambda: open_dictionary_manager(app_root),
     )
 
 
-def open_dictionary_manager(script_path: Path) -> None:
+def _manager_python() -> Path:
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    return pythonw if pythonw.is_file() else Path(sys.executable)
+
+
+def open_dictionary_manager(app_root: Path) -> None:
     subprocess.Popen(
         [
-            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-WindowStyle", "Hidden", "-File", str(script_path),
+            str(_manager_python()), "-m", "clipper.dictionary_manager_gui",
+            "--catalog", str(app_root / "dictionary-catalog.json"),
+            "--target", str(app_root / "data" / "dictionaries"),
         ],
-        cwd=script_path.parent,
+        cwd=app_root,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
     )
 
 

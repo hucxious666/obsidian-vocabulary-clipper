@@ -10,6 +10,8 @@ const DEFAULTS = {
   activeDictionary: "ecdict",
   dictionaries: [],
 };
+const NATIVE_PROTOCOL_VERSION = 2;
+const PROTOCOL_RELOAD_COOLDOWN_MS = 15_000;
 
 const elements = {
   sectionFile: document.querySelector("#section-file"),
@@ -38,6 +40,20 @@ function callNative(payload) {
 function showMessage(text, error = false) {
   elements.message.textContent = text;
   elements.message.classList.toggle("error", error);
+}
+
+async function recoverNativeProtocol(response) {
+  if (!ClipperUi.nativeProtocolMismatch(response, NATIVE_PROTOCOL_VERSION)) return false;
+  const state = await chrome.storage.local.get({ nativeProtocolReloadAt: 0 });
+  const now = Date.now();
+  if (now - Number(state.nativeProtocolReloadAt) < PROTOCOL_RELOAD_COOLDOWN_MS) {
+    showMessage("扩展与本地服务版本仍不一致，请重新运行安装脚本。", true);
+    return true;
+  }
+  await chrome.storage.local.set({ nativeProtocolReloadAt: now });
+  showMessage("检测到本地服务已更新，正在重新加载扩展…");
+  setTimeout(() => chrome.runtime.reload(), 100);
+  return true;
 }
 
 function populateSections(sections, selected) {
@@ -90,6 +106,8 @@ async function load() {
       autoOpenPdfEnabled: true,
     }),
   ]);
+  if (await recoverNativeProtocol(response)) return;
+  await chrome.storage.local.remove("nativeProtocolReloadAt");
   applySettings(response && response.ok ? response : DEFAULTS);
   elements.doubleClickLookup.checked = preferences.doubleClickLookupEnabled;
   elements.autoOpenPdf.checked = preferences.autoOpenPdfEnabled;
@@ -188,6 +206,7 @@ async function selectDictionary() {
     dictionaryId: selected,
   });
   elements.dictionary.disabled = false;
+  if (await recoverNativeProtocol(response)) return;
   if (!response || !response.ok) {
     const latest = await callNative({ action: "get_settings" });
     if (latest && latest.ok) applySettings(latest);
@@ -200,6 +219,7 @@ async function selectDictionary() {
 
 async function manageDictionaries() {
   const response = await callNative({ action: "open_dictionary_manager" });
+  if (await recoverNativeProtocol(response)) return;
   showMessage((response && response.message) || "无法打开词典下载器", !response || !response.ok);
 }
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import os
 import queue
 import threading
 import tkinter as tk
@@ -12,10 +14,28 @@ from .dictionary_download import install_pack
 from .dictionary_lock import DictionaryBusyError, installation_lock
 from .dictionary_repository import DictionaryRepository
 
+WINDOW_TITLE = "Obsidian 词汇采集器 - 离线词典"
+SW_RESTORE = 9
+
 
 def _size_label(value: object) -> str:
     size = int(value or 0)
     return f"{size / 1024 / 1024:.0f} MB" if size else "大小未知"
+
+
+def focus_existing_manager() -> bool:
+    if os.name != "nt":
+        return False
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+    user32.FindWindowW.restype = ctypes.c_void_p
+    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    window = user32.FindWindowW(None, WINDOW_TITLE)
+    if not window:
+        return False
+    user32.ShowWindow(window, SW_RESTORE)
+    return bool(user32.SetForegroundWindow(window))
 
 
 class DictionaryManagerApp:
@@ -35,7 +55,7 @@ class DictionaryManagerApp:
         self.root.after(100, self._poll_events)
 
     def _build_ui(self) -> None:
-        self.root.title("Obsidian 词汇采集器 - 离线词典")
+        self.root.title(WINDOW_TITLE)
         self.root.geometry("660x360")
         self.root.minsize(620, 320)
         frame = ttk.Frame(self.root, padding=20)
@@ -135,11 +155,12 @@ def main() -> int:
     parser.add_argument("--target", type=Path, default=app_root / "data" / "dictionaries")
     args = parser.parse_args()
     try:
-        with installation_lock("dictionary-manager-gui"):
+        with installation_lock("dictionary-manager-gui-v2"):
             root = tk.Tk()
             DictionaryManagerApp(root, args.catalog, args.target)
             root.mainloop()
     except DictionaryBusyError:
+        focus_existing_manager()
         return 0
     return 0
 
